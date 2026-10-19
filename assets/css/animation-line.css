@@ -1,0 +1,42 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+/* animation-line container: full-screen blue gradient behind the particles */
+#animation-line {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  overflow: hidden;
+  background: #1488cc; /* fallback for old browsers */
+  background: linear-gradient(to right, #2b32b2, #1488cc);
+}
+
+/* Canvas injected by particles.js */
+#animation-line > .particles-js-canvas-el {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Content layered on top of the animation */
+.animation-line__content {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  width: 80%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: #fff;
+  pointer-events: none; /* let clicks reach the canvas (click adds particles) */
+}
+
+.animation-line__content a,
+.animation-line__content button {
+  pointer-events: auto;
+}
