@@ -1,34 +1,55 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 
-/** true once the page is scrolled past `offset` px (header + go-top use this) */
-export function useScrolled(offset = 10) {
-  const [scrolled, setScrolled] = useState(false);
+/** true while the media query matches (false during server render) */
+export function useMediaQuery(query) {
+  const [matches, setMatches] = useState(false);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY >= offset);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, [offset]);
+    const list = window.matchMedia(query);
+    const update = () => setMatches(list.matches);
+    update();
+    list.addEventListener("change", update);
+    return () => list.removeEventListener("change", update);
+  }, [query]);
 
-  return scrolled;
+  return matches;
 }
 
 /** respects the visitor's "reduce motion" setting */
-export function useReducedMotion() {
-  const [reduced, setReduced] = useState(false);
+export const useReducedMotion = () => useMediaQuery("(prefers-reduced-motion: reduce)");
+
+/**
+ * Calls `update` once, then on every scroll and resize (at most once per frame).
+ * Pass `deps` to run it again when they change.
+ */
+export function useScrollFrame(update, deps = []) {
+  const onFrame = useEffectEvent(update);
 
   useEffect(() => {
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setReduced(query.matches);
-    update();
-    query.addEventListener("change", update);
-    return () => query.removeEventListener("change", update);
-  }, []);
+    let frame = null;
 
-  return reduced;
+    const run = () => {
+      frame = null;
+      onFrame();
+    };
+
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(run);
+    };
+
+    run();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+
+    return () => {
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      if (frame) cancelAnimationFrame(frame);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
 }
 
 export const clampNum = (v, min, max) => Math.min(max, Math.max(min, v));

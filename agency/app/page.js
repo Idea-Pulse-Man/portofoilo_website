@@ -1,44 +1,39 @@
-import AnimationLine from "@/components/AnimationLine";
-import Header from "@/components/Header";
-import Hero from "@/components/Hero";
-import Stats from "@/components/Stats";
 import About from "@/components/About";
-import Services from "@/components/Services";
-import Work from "@/components/Work";
+import Clients from "@/components/Clients";
+import Contact from "@/components/Contact";
+import Faq from "@/components/Faq";
+import Hero from "@/components/Hero";
 import Marquee from "@/components/Marquee";
 import Process from "@/components/Process";
-import Contact from "@/components/Contact";
-import Footer from "@/components/Footer";
-import GoTop from "@/components/GoTop";
+import Services from "@/components/Services";
+import Testimonials from "@/components/Testimonials";
+import Work from "@/components/Work";
 
 export default function Home() {
   return (
-    <>
-      <AnimationLine />
+    <main id="main" tabIndex={-1}>
+      <Hero />
 
-      <Header />
+      <Clients />
 
-      <main>
-        <Hero />
+      <article className="container">
+        <About />
+      </article>
 
-        <article className="container">
-          <Stats />
-          <About />
-          <Services />
-          <Work />
-        </article>
+      <Work />
 
-        <Marquee />
+      <article className="container">
+        <Services />
+      </article>
 
-        <article className="container">
-          <Process />
-          <Contact />
-        </article>
-      </main>
+      <Marquee />
 
-      <Footer />
-
-      <GoTop />
-    </>
+      <article className="container">
+        <Process />
+        <Testimonials />
+        <Faq />
+        <Contact />
+      </article>
+    </main>
   );
 }

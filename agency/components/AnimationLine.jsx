@@ -66,7 +66,7 @@ export default function AnimationLine() {
     // Content covers the canvas, so clicks anywhere on the page (except controls) add particles too
     const onClick = (event) => {
       if (!window.pJSDom?.length) return;
-      if (event.target.closest("a, button, input, textarea, label, select, [data-gem-stage], .particles-js-canvas-el")) return;
+      if (event.target.closest("a, button, input, textarea, label, select, summary, [data-gem-stage], .particles-js-canvas-el")) return;
 
       const pJS = window.pJSDom[0].pJS;
       if (pJS.particles.array.length > 120) return;

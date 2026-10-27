@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import Reveal from "@/components/Reveal";
+import { useRef, useState } from "react";
+import SectionHead from "@/components/SectionHead";
 import { processSteps } from "@/lib/content";
-import { clampNum } from "@/lib/hooks";
+import { clampNum, useScrollFrame } from "@/lib/hooks";
 
 // four heartbeats, one per step
 const PULSE_D =
@@ -12,47 +12,27 @@ const PULSE_D =
 export default function Process() {
   const sectionRef = useRef(null);
   const pathRef = useRef(null);
+  const lengthRef = useRef(0);
   const [activeCount, setActiveCount] = useState(0);
 
   // the heartbeat line draws itself while the section scrolls through the viewport
-  useEffect(() => {
+  useScrollFrame(() => {
     const path = pathRef.current;
-    const length = path.getTotalLength();
-    let frame = null;
+    if (!lengthRef.current) {
+      lengthRef.current = path.getTotalLength();
+      path.style.strokeDasharray = lengthRef.current;
+    }
 
-    path.style.strokeDasharray = length;
+    const rect = sectionRef.current.getBoundingClientRect();
+    const progress = clampNum((window.innerHeight * 0.85 - rect.top) / (rect.height * 0.9), 0, 1);
 
-    const update = () => {
-      frame = null;
-      const rect = sectionRef.current.getBoundingClientRect();
-      const progress = clampNum((window.innerHeight * 0.85 - rect.top) / (rect.height * 0.9), 0, 1);
-
-      path.style.strokeDashoffset = length * (1 - progress);
-      setActiveCount(Math.floor(progress * processSteps.length + 0.5));
-    };
-
-    const onScroll = () => {
-      if (!frame) frame = requestAnimationFrame(update);
-    };
-
-    update();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
-      if (frame) cancelAnimationFrame(frame);
-    };
-  }, []);
+    path.style.strokeDashoffset = lengthRef.current * (1 - progress);
+    setActiveCount(Math.floor(progress * processSteps.length + 0.5));
+  });
 
   return (
     <section className="process panel" id="process" ref={sectionRef}>
-      <Reveal className="section-content">
-        <p className="section-subtitle">How we work</p>
-
-        <h2 className="h3 section-title">From spark to launch in four beats.</h2>
-      </Reveal>
+      <SectionHead index="04" label="How we work" title="From spark to launch in four *beats.*" />
 
       <svg className="pulse-line" viewBox="0 0 1200 160" preserveAspectRatio="none" aria-hidden="true">
         <defs>
@@ -70,6 +50,7 @@ export default function Process() {
           <li className={`process-step ${i < activeCount ? "active" : ""}`} key={item.title}>
             <span className="step-num">0{i + 1}</span>
             <h3 className="h4">{item.title}</h3>
+            <span className="process-time">{item.time}</span>
             <p>{item.text}</p>
           </li>
         ))}

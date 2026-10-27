@@ -1,12 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Icon from "@/components/Icon";
-import Reveal from "@/components/Reveal";
-import { stats } from "@/lib/content";
 import { useReducedMotion } from "@/lib/hooks";
 
-function Counter({ value }) {
+/** Counts up from 0 to `value` the first time it scrolls into view */
+export default function Counter({ value }) {
   const ref = useRef(null);
   const reduced = useReducedMotion();
   const [current, setCurrent] = useState(0);
@@ -40,28 +38,4 @@ function Counter({ value }) {
   }, [value, reduced]);
 
   return <span ref={ref}>{current}</span>;
-}
-
-export default function Stats() {
-  return (
-    <section className="stats" id="stats">
-      <ul className="stats-list">
-        {stats.map((item) => (
-          <Reveal as="li" key={item.label}>
-            <a href={item.href} className="stats-card">
-              <div className="card-icon">
-                <Icon name={item.icon} />
-              </div>
-
-              <h2 className="h2 card-title">
-                <Counter value={item.value} />+ <strong>{item.label}</strong>
-              </h2>
-
-              <Icon name="chevron" className="chevron" />
-            </a>
-          </Reveal>
-        ))}
-      </ul>
-    </section>
-  );
 }
