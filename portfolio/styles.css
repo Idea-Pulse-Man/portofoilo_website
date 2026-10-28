@@ -1,0 +1,348 @@
+/* Headland portfolio. Tokens first, then the hero over the 3D scene, the résumé, the shelves of work, the intro
+   (the twin) and the breakpoints. Text is light on dark in both hours: day is golden hour, night is moonlight. */
+:root{
+  --sky:linear-gradient(180deg,#0D1430 0%,#2A3157 30%,#5E4E69 56%,#A9704F 82%,#C98A58 100%);
+  --base:#15121c;
+  --flare:rgba(255,206,140,.42);--flare2:rgba(255,150,70,.14);
+  --veil:linear-gradient(180deg,rgba(26,19,28,.5),rgba(20,15,22,.7));
+  --sheet:rgba(24,19,32,.84);--gold:#EBC051;
+  /* one warm neutral ladder for all text: hierarchy comes from lightness, not from colour. Gold is for the pulse alone. */
+  --title:#F6EEDF;--text:#E4DACB;--muted:#ABA293;--faint:#7A7268;--hair:rgba(255,236,210,.1);
+  /* glass: a near-solid pane with a lit top edge and a hairline rim; a small contact shadow, never a halo */
+  --pane:rgba(18,19,28,.72);--pane-hi:rgba(46,46,60,.78);--pane-top:rgba(255,238,214,.1);--pane-edge:rgba(255,238,214,.2);--cast:rgba(0,0,0,.35);
+  --shadow:inset 0 1px 0 var(--pane-top),inset 0 0 0 1px var(--hair),0 1px 2px var(--cast);
+  --ring:rgba(244,228,206,.6);--focus:#E8D9C3;
+  /* the twin's colour: the only cool one on the site, the data before the stone is lit */
+  --data:#3EEFD8;--void:#06080E;
+  --ease:cubic-bezier(.25,0,0,1);--ease-out:cubic-bezier(.16,1,.3,1);
+  --display:"Marcellus","Iowan Old Style","Palatino Linotype",Georgia,serif;
+  --body:"Hanken Grotesk","Segoe UI",system-ui,-apple-system,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --sky:linear-gradient(180deg,#04060D 0%,#0A1030 40%,#1B1F45 72%,#2B2A59 100%);
+    --base:#0B0E16;--flare:rgba(255,214,150,.36);--flare2:rgba(255,170,90,.1);
+    --veil:linear-gradient(180deg,rgba(5,6,12,.6),rgba(5,6,12,.78));
+    --sheet:rgba(13,15,22,.86);--gold:#E0B55C;
+  }
+}
+:root[data-theme="dark"]{
+  --sky:linear-gradient(180deg,#04060D 0%,#0A1030 40%,#1B1F45 72%,#2B2A59 100%);
+  --base:#0B0E16;--flare:rgba(255,214,150,.36);--flare2:rgba(255,170,90,.1);
+  --veil:linear-gradient(180deg,rgba(5,6,12,.6),rgba(5,6,12,.78));
+  --sheet:rgba(13,15,22,.86);--gold:#E0B55C;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-padding-top:16px}
+body{margin:0;min-height:100vh;background:var(--base);color:var(--title);font-family:var(--body);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden;overflow-x:clip}
+h1,h2,h3,h4,p,ol,ul{margin:0} ol,ul{padding:0;list-style:none}
+a{color:inherit}
+strong,b{font-weight:600}
+/* no orphaned last words, no lopsided headings */
+p,li{text-wrap:pretty} h1,h2,h3,h4{text-wrap:balance}
+:focus-visible{outline:2px solid var(--focus);outline-offset:3px;border-radius:6px}
+svg.i{fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.bg{position:fixed;inset:0;z-index:-3;background:var(--sky)}
+.wrap{max-width:1200px;margin:0 auto;padding:0 32px}
+.skip{position:absolute;left:-999px;top:8px;z-index:80;padding:8px 14px;border-radius:8px;background:var(--title);color:#17131d}
+.skip:focus{left:8px}
+.noscript{margin:8px 0 0;color:var(--muted)}
+
+/* glass: the lit edge is a 1px gradient rim, brightest at the top-left and bottom-right corners */
+.glass{position:relative;background:var(--pane);box-shadow:var(--shadow)}
+.glass::before,.pill::before,.chip::before,.icon-btn::before,.sheet::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;
+  background:linear-gradient(146deg,var(--pane-edge),transparent 32%,transparent 68%,var(--pane-edge));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0)}
+
+/* ---------- the hero: the scene, its light, and the copy over it ---------- */
+.hero3d{position:relative;min-height:100vh;min-height:100svh;display:flex;overflow:hidden}
+#gl{position:absolute;inset:0;opacity:0;transition:opacity 2.4s ease}
+#gl.on{opacity:1}
+#gl canvas{display:block;width:100%;height:100%}
+.fx{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.flare{position:absolute;left:0;top:0;width:110vmin;height:110vmin;margin:-55vmin 0 0 -55vmin;border-radius:50%;background:radial-gradient(closest-side,var(--flare),var(--flare2) 36%,transparent 70%);mix-blend-mode:screen;opacity:0;will-change:transform,opacity}
+.rays{position:absolute;left:0;top:0;width:0;height:0;opacity:0;mix-blend-mode:screen;will-change:transform,opacity}
+.rays i{position:absolute;left:-95vmax;top:-95vmax;width:190vmax;height:190vmax;border-radius:50%;filter:blur(7px);animation:spin 300s linear infinite;
+  background:conic-gradient(from 0deg,transparent 0deg,rgba(255,196,120,.55) 4deg,transparent 9deg,transparent 33deg,rgba(255,196,120,.38) 38deg,transparent 42deg,transparent 61deg,rgba(255,196,120,.6) 68deg,transparent 75deg,transparent 102deg,rgba(255,196,120,.34) 107deg,transparent 111deg,transparent 143deg,rgba(255,196,120,.52) 151deg,transparent 158deg,transparent 188deg,rgba(255,196,120,.4) 194deg,transparent 199deg,transparent 226deg,rgba(255,196,120,.6) 234deg,transparent 243deg,transparent 270deg,rgba(255,196,120,.36) 276deg,transparent 281deg,transparent 309deg,rgba(255,196,120,.5) 317deg,transparent 324deg,transparent 360deg);
+  -webkit-mask-image:radial-gradient(closest-side,#000 3%,rgba(0,0,0,.5) 22%,transparent 62%);mask-image:radial-gradient(closest-side,#000 3%,rgba(0,0,0,.5) 22%,transparent 62%)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.vignette,.grain,.scrim{position:absolute;inset:0;pointer-events:none}
+.vignette{background:radial-gradient(ellipse at 62% 46%,transparent 45%,rgba(3,3,10,.55) 100%)}
+.grain{opacity:.12;mix-blend-mode:overlay;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")}
+/* the grain only covers the wait; once the scene is up it would just cost frames */
+.hero3d.ready .grain{display:none}
+.scrim{background:linear-gradient(90deg,rgba(6,6,14,.84),rgba(6,6,14,.7) 30%,rgba(6,6,14,.36) 50%,rgba(6,6,14,0) 70%)}
+/* the hero's shading fades out at its foot, so the fixed scene runs on under the work without a seam */
+.scrim,.vignette{-webkit-mask-image:linear-gradient(#000 50%,rgba(0,0,0,.6) 72%,rgba(0,0,0,.2) 88%,transparent);mask-image:linear-gradient(#000 50%,rgba(0,0,0,.6) 72%,rgba(0,0,0,.2) 88%,transparent)}
+.hero-inner{position:relative;display:flex;flex-direction:column;width:100%;padding-bottom:64px;pointer-events:none}
+.hero-inner .top,.hero-inner .hero-copy,.hero-inner a,.hero-inner button,.hero-inner .sheet{pointer-events:auto}
+.top{display:flex;justify-content:flex-end;padding-top:18px}
+.icon-btn{position:relative;width:42px;height:42px;border:0;border-radius:999px;display:grid;place-items:center;padding:0;color:var(--title);background:var(--pane);box-shadow:var(--shadow);cursor:pointer;transition:background-color .2s var(--ease)}
+.icon-btn:hover{background:var(--pane-hi)}
+.icon-btn svg{grid-area:1/1;width:18px;height:18px}
+.icon-btn .to-day,.icon-btn[data-night="true"] .to-night{display:none}
+.icon-btn[data-night="true"] .to-day{display:block}
+
+.hero-copy{margin-top:clamp(24px,8vh,110px);max-width:540px}
+.hero-copy h1{font-family:var(--display);font-weight:400;font-size:clamp(46px,5.2vw,78px);line-height:.98;letter-spacing:-.01em;color:var(--title);text-shadow:0 2px 30px rgba(0,0,0,.35)}
+/* letters are inline-blocks (the birds perch on them); each word stays whole so the name only breaks at a space */
+.hero-copy h1 .word{display:inline-block;white-space:nowrap}
+.hero-copy h1 .ltr{display:inline-block}
+@media (min-width:761px){.hero-copy h1{white-space:nowrap}}
+.alt{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-top:16px;font-size:14.5px;color:var(--muted)}
+.alt span+span::before{content:"·";margin-right:12px;color:var(--faint)}
+.beat{width:44px;height:16px;flex:none;fill:none;stroke:var(--gold);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:64;stroke-dashoffset:64;animation:beat 3.4s var(--ease) infinite}
+@keyframes beat{0%{stroke-dashoffset:64}45%,68%{stroke-dashoffset:0}100%{stroke-dashoffset:-64}}
+/* the bio sits a step down the ladder, so the few bold terms carry the scan */
+.bio{margin-top:16px;font-size:16px;line-height:1.68;color:#C4BAAA}
+.bio strong{color:var(--title)}
+.pills{display:flex;flex-wrap:wrap;gap:10px;margin-top:28px}
+.pill{position:relative;display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 17px;border:0;border-radius:999px;font:inherit;font-size:14px;font-weight:500;line-height:1;letter-spacing:-.005em;text-decoration:none;white-space:nowrap;
+  color:var(--title);background:var(--pane);box-shadow:var(--shadow);cursor:pointer;transition:background-color .2s var(--ease),color .2s var(--ease),transform .2s var(--ease)}
+.pill:hover{background:var(--pane-hi)}
+.pill:active{transform:translateY(1px)}
+.pill svg{width:15px;height:15px;flex:none}
+.pill[aria-expanded="true"]{background:var(--title);color:#17131d;box-shadow:none}
+.pill[aria-expanded="true"]::before{display:none}
+
+/* entrance: the name settles from wide to tight, the rest follows in a cascade (only when script runs) */
+.js .hero-copy>*{opacity:0;transform:translateY(16px);transition:opacity 1.6s ease,transform 1.8s var(--ease-out),letter-spacing 2.6s var(--ease-out)}
+.js .hero-copy h1{letter-spacing:.05em}
+.hero3d.ready .hero-copy>*{opacity:1;transform:none}
+.hero3d.ready .hero-copy h1{letter-spacing:-.01em;transition-delay:.5s}
+.hero3d.ready .hero-copy .alt{transition-delay:1s}
+.hero3d.ready .hero-copy .bio{transition-delay:1.3s}
+.hero3d.ready .hero-copy .pills{transition-delay:1.6s}
+#birds{position:absolute;left:0;top:0;z-index:3;pointer-events:none}
+
+/* desktop: the headland is a fixed layer behind the whole page (app.js moves #gl and its light out of the hero);
+   a veil deepens as you scroll and draws the scene out of focus, so the glass work reads over soft light and shade */
+#gl.fixed,.fx.fixed{position:fixed;inset:0;z-index:-2}
+.veil{position:fixed;inset:0;z-index:-2;pointer-events:none;opacity:var(--sink,0);background:var(--veil);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+.scene-fixed .hero3d{pointer-events:none}
+.scene-fixed .hero3d .hero-inner{pointer-events:none}
+.scene-hot,.scene-hot body{cursor:pointer}
+
+/* ---------- résumé: a sheet that opens in place under the pills ---------- */
+.resume{display:grid;grid-template-rows:0fr;margin-top:36px;transition:grid-template-rows .7s var(--ease);scroll-margin-top:20px}
+.resume.open{grid-template-rows:1fr}
+.resume-clip{min-height:0;overflow:hidden}
+.sheet{position:relative;background:var(--sheet);box-shadow:var(--shadow);-webkit-backdrop-filter:blur(22px) saturate(1.2);backdrop-filter:blur(22px) saturate(1.2);border-radius:24px;padding:34px 40px 44px;color:var(--text);
+  opacity:0;visibility:hidden;transform:translateY(-8px);transition:opacity .5s var(--ease),transform .7s var(--ease),visibility 0s linear .7s}
+.resume.open .sheet{opacity:1;visibility:visible;transform:none;transition-delay:0s}
+/* entries follow the sheet in a short cascade (--i is set in app.js) */
+.resume .cascade{opacity:0;transform:translateY(6px);transition:opacity .45s var(--ease),transform .6s var(--ease)}
+.resume.open .cascade{opacity:1;transform:none;transition-delay:calc(140ms + var(--i,0) * 46ms)}
+.sheet-top{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:14px 22px;padding-right:56px}
+.sheet-top h2{font-family:var(--display);font-weight:400;font-size:clamp(30px,3vw,40px);line-height:1.1;letter-spacing:-.01em;color:var(--title)}
+.sheet-top h2:focus{outline:0}
+.sheet-tools{display:flex;flex-wrap:wrap;gap:10px}
+.sheet .pill{min-height:38px;padding:0 16px;font-size:13.5px;background:var(--pane-hi)}
+.sheet-close{position:absolute;right:0;top:0;width:38px;height:38px;border:0;border-radius:999px;display:grid;place-items:center;padding:0;cursor:pointer;color:var(--muted);background:var(--hair);transition:color .2s var(--ease),background-color .2s var(--ease)}
+.sheet-close:hover{color:var(--title);background:var(--pane-hi)}
+.sheet-close svg{width:16px;height:16px}
+.sheet strong{color:var(--title)}
+.sheet-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:56px;margin-top:26px}
+.sheet-head{display:flex;align-items:center;gap:12px;margin-bottom:14px;font-family:var(--display);font-weight:400;font-size:24px;line-height:1.2;color:var(--title)}
+.sheet-head svg{width:22px;height:22px;flex:none;color:var(--muted)}
+.sheet-col .sheet-head:not(:first-child){margin-top:36px}
+.sheet .top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:6px 14px}
+.when{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+/* experience: a timeline of employers; each opens to what was done there */
+.posts{margin-left:4px;border-left:1px solid var(--hair)}
+.post{position:relative;padding:0 0 6px 22px}
+.post::before{content:"";position:absolute;left:-3.5px;top:17px;width:6px;height:6px;border-radius:50%;background:var(--muted)}
+.post-head{display:block;width:100%;padding:8px 0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.post-head.plain{cursor:default}
+.org{font-size:16px;font-weight:600;color:var(--title);transition:color .2s var(--ease)}
+.post-head:not(.plain):hover .org{color:#fff}
+.role{display:block;margin-top:2px;font-size:14px;color:var(--muted)}
+.caret{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;transition:transform .3s var(--ease)}
+.post-head[aria-expanded="true"] .caret{transform:rotate(180deg)}
+.post-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .42s var(--ease)}
+.post-body.open{grid-template-rows:1fr}
+.post-body>div{min-height:0;overflow:hidden;font-size:14px;line-height:1.62;color:var(--text)}
+.post-body ul{list-style:disc;padding:0 0 12px 18px}
+.post-body li{margin:5px 0}
+.post-body li::marker{color:var(--faint)}
+.sheet-list li{padding:11px 0;border-top:1px solid var(--hair);font-size:14px;line-height:1.58;color:var(--muted)}
+.sheet-list li:first-child{padding-top:4px;border-top:0}
+.sheet-list strong{font-size:15px;font-weight:600}
+/* skills: an icon and a name per group, then the tools as one quiet line */
+.skills li{padding:10px 0;border-bottom:1px solid var(--hair)}
+.skills h4{display:flex;align-items:center;gap:9px;margin-bottom:2px;font-size:14.5px;font-weight:600;color:var(--title)}
+.skills h4 svg{width:15px;height:15px;flex:none;color:var(--muted)}
+.skills p{padding-left:24px;font-size:14px;color:var(--muted)}
+.skills span+span::before{content:"·";margin:0 .45em;color:var(--faint)}
+
+/* ---------- work: filter chips, then one titled shelf per kind of work ---------- */
+main{position:relative;padding:8px 0 72px}
+.filters{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 26px}
+/* frosted chips with a lit top edge; the chosen one inverts to cream */
+.chip{position:relative;display:inline-flex;align-items:center;gap:5px;height:34px;padding:0 11px;border:0;border-radius:999px;font:inherit;font-size:13px;font-weight:500;white-space:nowrap;cursor:pointer;
+  color:var(--muted);background:var(--pane);box-shadow:var(--shadow);transition:color .2s var(--ease),background-color .2s var(--ease)}
+.chip svg{width:14px;height:14px;flex:none}
+.chip:hover{color:var(--title)}
+.chip[aria-pressed="true"]{color:#17131d;background:var(--title);box-shadow:none}
+.chip[aria-pressed="true"]::before{display:none}
+/* the running total is for screen readers; sighted readers get it per shelf, at the right of each head */
+.filter-note,.tag-label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.shelf[hidden],.card[hidden]{display:none}
+.shelf{margin-top:72px;scroll-margin-top:24px}
+.shelf:first-child{margin-top:8px}
+.shelf-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:6px 20px;margin-bottom:24px}
+.shelf-head h2{font-family:var(--display);font-weight:400;font-size:clamp(26px,2.6vw,34px);line-height:1.1;letter-spacing:-.01em;color:var(--title)}
+.shelf-head .count{font-size:14px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.shelf-head p{flex:0 0 100%;font-size:15px;color:var(--muted)}
+.shelf .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px}
+.shelf .grid.cols-3,.shelf-notes .grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.shelf-compact .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.card{display:flex;flex-direction:column;border-radius:16px;overflow:hidden}
+/* hover and focus draw a quiet ring and ease the art forward; the card itself never jumps */
+.card::after{content:"";position:absolute;inset:0;z-index:3;border-radius:inherit;box-shadow:inset 0 0 0 1px var(--ring);opacity:0;transition:opacity .26s var(--ease);pointer-events:none}
+@media (hover:hover){.card:hover::after{opacity:1}}
+.card:has(:focus-visible)::after{opacity:1}
+.cover,.thumb{position:relative;display:block;background:#0B0E18;overflow:hidden}
+.cover{aspect-ratio:16/9}
+.cover canvas,.thumb canvas{display:block;width:100%;height:100%;object-fit:cover;transition:transform .9s var(--ease-out)}
+.card:hover .cover canvas,.card:hover .thumb canvas{transform:scale(1.045)}
+.card-body{display:flex;flex:1;flex-direction:column;gap:6px;padding:15px 18px 18px}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.card h3{font-size:15.5px;font-weight:600;line-height:1.3;letter-spacing:-.01em;color:var(--title)}
+.card h3 a{text-decoration:none}
+.card-links{display:flex;gap:4px;margin-right:-8px}
+.card-links a{position:relative;z-index:4;width:32px;height:32px;display:grid;place-items:center;border-radius:8px;color:var(--muted);transition:color .2s var(--ease)}
+.card-links a:hover{color:var(--title)}
+.card-links svg{width:16px;height:16px}
+.card p{font-size:14px;line-height:1.55;color:var(--muted)}
+.card .meta{font-size:13px;color:var(--faint);font-variant-numeric:tabular-nums}
+/* tags are icons; the label stays for screen readers and shows as a tooltip */
+.tags{display:flex;flex-wrap:wrap;gap:10px;margin-top:auto;padding-top:6px}
+.tag{display:inline-flex;color:var(--faint);transition:color .2s var(--ease)}
+.tag:hover{color:var(--muted)}
+.tag svg{width:14px;height:14px;flex:none}
+/* experiments: small rows, two across, the thumbnail beside the text */
+.card.l-compact{flex-direction:row;align-items:stretch}
+.card.l-compact .thumb{flex:0 0 34%}
+.card.l-compact .card-body{padding:14px 18px}
+
+/* writing and speaking: three cards like the shelves, each opening on a line drawing of its subject */
+.note-art{aspect-ratio:16/7;overflow:hidden;background:radial-gradient(90% 120% at 50% 0%,var(--pane-hi),transparent 70%);border-bottom:1px solid var(--hair)}
+.note-art svg{display:block;width:100%;height:100%;overflow:visible;transition:transform .9s var(--ease-out)}
+.card:hover .note-art svg{transform:scale(1.045)}
+.note-art .ln{fill:none;stroke:var(--faint);stroke-width:1;stroke-linecap:round;opacity:.7}
+.note-art .lit{fill:none;stroke:var(--title);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.note-art .dot{fill:var(--faint)}
+.note-art .node{fill:#15161f;stroke:var(--title);stroke-width:1.4}
+.note-art .root{fill:var(--title)}
+.kicker{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.kicker svg{width:14px;height:14px;flex:none}
+.card.l-notes .card-body{gap:8px}
+.venues{display:grid;margin-top:2px}
+.venues li{padding:8px 0;border-top:1px solid var(--hair);font-size:14px;color:var(--text)}
+.venues li:first-child{padding-top:2px;border-top:0}
+.note-links{display:flex;flex-direction:column;gap:2px;margin-top:auto;padding-top:10px;border-top:1px solid var(--hair)}
+.note-links a{display:inline-flex;align-items:center;gap:8px;min-height:32px;font-size:14px;color:var(--text);text-decoration:none;transition:color .2s var(--ease)}
+.note-links a:hover{color:var(--title)}
+.note-links .lbl{font-size:12.5px;color:var(--faint)}
+.note-links svg{width:13px;height:13px;flex:none;color:var(--muted)}
+
+/* footer: the page index on the left under a hairline, the copyright at the right end */
+footer{padding:24px 0 40px;font-size:13px;color:var(--muted)}
+.foot-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 24px;border-top:1px solid var(--hair)}
+.sitemap{flex:1 1 auto;display:flex;flex-wrap:wrap;gap:6px 18px;padding:18px 0 14px}
+.sitemap a{display:inline-flex;align-items:center;min-height:32px;color:var(--text);text-decoration:none;transition:color .2s var(--ease)}
+.sitemap a:hover,.sitemap a:focus-visible{color:var(--title);text-decoration:underline;text-decoration-color:var(--hair);text-underline-offset:3px}
+.copy{margin-left:auto;white-space:nowrap}
+
+/* ---------- the twin: the first visit's opening (app.js). A void, a log of the real build steps, the headland
+   drawn as a lattice that spreads out from the lighthouse; then the stone is lit and the name types itself in ---------- */
+.twin{position:fixed;inset:0;z-index:60;pointer-events:none;font:400 11.5px/1.75 var(--mono);color:var(--muted);transition:opacity .7s var(--ease)}
+.twin::before{content:"";position:absolute;inset:0;background:var(--void);transition:opacity .45s var(--ease)}
+.twin.live::before{opacity:0}
+.twin.out{opacity:0}
+.twin-log{position:absolute;left:max(28px,calc(50vw - 572px));bottom:44px;width:min(470px,calc(100vw - 56px));text-shadow:0 1px 12px rgba(0,0,0,.7)}
+/* a soft pool of dark under the log, so it reads over the lattice without becoming a card */
+.twin-log::before{content:"";position:absolute;z-index:-1;inset:-70px -120px -44px -90px;background:radial-gradient(closest-side,rgba(6,8,14,.82),rgba(6,8,14,.5) 60%,transparent);pointer-events:none}
+.twin.out .twin-log{animation:twinJolt .38s steps(6) both}
+.twin-head{display:flex;justify-content:space-between;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--title)}
+.twin-head b{font-weight:400;color:var(--data)}
+.twin-bar{position:relative;display:block;height:1px;margin:9px 0 11px;background:var(--hair)}
+.twin-bar i{position:absolute;inset:0;background:var(--data);box-shadow:0 0 10px var(--data);transform:scaleX(0);transform-origin:0 50%}
+.twin ol{margin:0;padding:0;list-style:none}
+.twin li{display:grid;grid-template-columns:40px 96px minmax(0,1fr);gap:12px;white-space:nowrap;animation:twinIn .4s var(--ease-out) both}
+.twin li time{color:var(--faint);font-variant-numeric:tabular-nums}
+.twin li b{font-weight:400;color:var(--data)}
+.twin li span{overflow:hidden;text-overflow:ellipsis;color:var(--text);font-variant-numeric:tabular-nums}
+.twin li:not(.ok) span::after{content:"";display:inline-block;width:6px;height:11px;margin-left:6px;vertical-align:-1px;background:var(--data);animation:twinCaret .9s steps(1) infinite}
+.twin li.ok b,.twin li.ok span{color:var(--muted)}
+.twin-skip{position:absolute;right:max(28px,calc(50vw - 572px));bottom:44px;margin:0;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
+@keyframes twinIn{from{opacity:0;transform:translateX(-6px)}}
+@keyframes twinCaret{50%{opacity:0}}
+@keyframes twinJolt{0%{transform:none}20%{transform:translateX(-7px);clip-path:inset(0 0 40% 0)}40%{transform:translateX(5px);clip-path:inset(30% 0 0 0)}60%{transform:translateX(-3px);clip-path:none}100%{transform:none;opacity:0}}
+/* the void from the first paint until the twin takes over (gate.js), with a way out should the script never run */
+.twin-pre{background:var(--void)}
+.twin-pre body::after{content:"";position:fixed;inset:0;z-index:59;background:var(--void);animation:twinGone .5s 9s forwards}
+@keyframes twinGone{to{opacity:0;visibility:hidden}}
+.twin-run #gl{transition:none}
+.twin-run .scrim,.twin-run #birds,.twin-run .vignette,.twin-run .grain,.twin-run .hero-inner .top{opacity:0}
+.twin-type .scrim,.twin-type .vignette,.twin-type .hero-inner .top{transition:opacity 1.6s var(--ease)}
+/* the name types itself in, each letter flickering from the twin's colour to cream */
+.twin-type .hero3d.ready .hero-copy h1{letter-spacing:-.01em;transition:opacity .01s}
+.twin-type .hero-copy h1 .ltr{animation:twinLtr .9s var(--ease-out) both;animation-delay:calc(var(--i,0) * 55ms)}
+@keyframes twinLtr{0%{opacity:0;color:var(--data);text-shadow:0 0 22px rgba(62,239,216,.9)}16%{opacity:1}26%{opacity:.2}38%{opacity:1;color:var(--data)}100%{opacity:1;color:var(--title);text-shadow:0 2px 30px rgba(0,0,0,.35)}}
+
+/* ---------- breakpoints ---------- */
+@media (max-width:1240px){.shelf .grid{grid-template-columns:repeat(3,minmax(0,1fr))}.shelf-compact .grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:940px){
+  .shelf .grid,.shelf .grid.cols-3{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .shelf-compact .grid,.shelf-notes .grid{grid-template-columns:1fr}
+  .card.l-notes{flex-direction:row}
+  .card.l-notes .note-art{flex:0 0 34%;aspect-ratio:auto;border-bottom:0;border-right:1px solid var(--hair)}
+}
+/* phones: the scene on top, the copy under it, the page on a dark ground */
+@media (max-width:760px){
+  body{background:#0b0a12}
+  .bg{display:none}
+  .hero3d{display:block;min-height:0}
+  #gl,.fx,.vignette,.grain{bottom:auto;height:64vh}
+  #gl,.fx{-webkit-mask-image:linear-gradient(#000 55%,rgba(0,0,0,.6) 75%,rgba(0,0,0,.2) 90%,transparent);mask-image:linear-gradient(#000 55%,rgba(0,0,0,.6) 75%,rgba(0,0,0,.2) 90%,transparent)}
+  .scrim{background:linear-gradient(180deg,rgba(11,10,18,0) 30vh,rgba(11,10,18,.86) 58vh,#0b0a12 72vh)}
+  .hero-inner{padding-bottom:40px}
+  .hero-copy{margin-top:calc(64vh - 170px)}
+  .card,.pill,.chip{background:rgba(20,18,30,.85)}
+  .sheet{background:rgba(20,18,30,.96);border-radius:18px;padding:22px 18px 28px}
+  .sheet-top{padding-right:0}
+  .sheet-top h2{padding-right:56px}
+  .sheet-tools{flex-basis:100%}
+  .sheet-grid{grid-template-columns:1fr;gap:8px}
+  .sheet-col .sheet-head:first-child{margin-top:28px}
+}
+@media (max-width:620px){
+  .wrap{padding:0 18px}
+  .hero-copy .bio{font-size:15.5px;line-height:1.62}
+  .pills{gap:8px}
+  .pill{min-height:38px;padding:0 14px;font-size:13.5px}
+  .filters{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -18px 22px;padding:0 18px 6px}
+  .filters::-webkit-scrollbar{display:none}
+  .chip{flex:0 0 auto}
+  .shelf{margin-top:48px}
+  .shelf .grid,.shelf .grid.cols-3{grid-template-columns:1fr;gap:12px}
+}
+/* small phones: each card becomes a row with its art on the left */
+@media (max-width:519px){
+  .card.l-cards,.card.l-compact,.card.l-notes{flex-direction:row;border-radius:14px}
+  .card.l-cards .cover,.card.l-compact .thumb,.card.l-notes .note-art{flex:0 0 36%;aspect-ratio:auto;min-height:112px;border-bottom:0}
+  .card .card-body{gap:4px;min-width:0;padding:11px 12px 12px}
+  .card h3{font-size:15px}
+  .card p{font-size:13px;line-height:1.45;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden}
+  .card-links{margin-right:-6px;gap:0}
+  .card-links a{width:30px;height:30px}
+}
+@media (prefers-reduced-motion:reduce){
+  .js .hero-copy>*,.resume,.resume .sheet,.resume .cascade,.post-body,.caret,.card,.pill,.cover canvas,.thumb canvas,.note-art svg{transition:none}
+  .rays i,.beat{animation:none}
+  .beat{stroke-dashoffset:0}
+}
