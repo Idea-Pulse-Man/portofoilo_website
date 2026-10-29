@@ -231,7 +231,7 @@ function Scene({ progressRef, input, reduced, onReady }) {
   const glowTeal = useRef();
   const innerLight = useRef();
   const strip = useRef();
-  const state = useRef({ smooth: 0, spin: 0, ready: false });
+  const state = useRef({ smooth: 0, spin: 0, intro: 0, ready: false });
 
   const goldMat = useMemo(
     () => new THREE.MeshStandardMaterial({ color: GOLD, metalness: 1, roughness: 0.26, envMapIntensity: 1.35 }),
@@ -276,6 +276,11 @@ function Scene({ progressRef, input, reduced, onReady }) {
     }
 
     if (!reduced) s.spin += dt * 0.18;
+
+    // grows in once the site intro has lifted (html.is-loaded, see layout.js)
+    if (reduced) s.intro = 1;
+    else if (s.intro < 1 && document.documentElement.classList.contains("is-loaded")) s.intro = Math.min(1, s.intro + dt / 1.8);
+    root.current.scale.setScalar(0.55 + 0.45 * (1 - Math.pow(1 - s.intro, 3)));
 
     root.current.rotation.y += (i.dragY + i.leanX * 0.35 - root.current.rotation.y) * 0.08;
     root.current.rotation.x += (i.dragX + i.leanY * 0.15 - root.current.rotation.x) * 0.08;

@@ -21,6 +21,7 @@ export async function POST(request) {
   const email = clean(body.email, 200);
   const message = clean(body.message, 5000);
   const needs = Array.isArray(body.needs) ? body.needs.map((n) => clean(n, 40)).filter(Boolean).slice(0, 10) : [];
+  const budget = clean(body.budget, 40);
 
   if (!name || !message || !EMAIL_RE.test(email)) {
     return Response.json({ error: "Please fill in your name, a valid email and a message." }, { status: 400 });
@@ -42,7 +43,7 @@ export async function POST(request) {
       to: [CONTACT_TO_EMAIL],
       reply_to: email,
       subject: `New project: ${name}`,
-      text: `${message}\n\nNeeds: ${needs.join(", ") || "Not sure yet"}\n\n${name}\n${email}`,
+      text: `${message}\n\nNeeds: ${needs.join(", ") || "Not sure yet"}\nBudget: ${budget || "Not sure yet"}\n\n${name}\n${email}`,
     }),
   });
 
