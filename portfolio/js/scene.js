@@ -1,13 +1,19 @@
 /* Headland: the hero scene, drawn with three.js r128.
    A lighthouse on a grassy headland over the sea at golden hour. At night the sun is down, the moon is up and the lamp
    is lit; its beam sweeps the water. The land is one height field whose cliffs are pulled up into near-vertical walls
-   and cut into strata, with sea stacks and a scree of boulders at their foot; rock, grass, plaster and slate are
+   and cut into strata, with sea stacks and a scree of boulders at their foot; rock, grass and plaster are
    photo scans (CC0, from Poly Haven, in assets/tex), projected from three sides so the cliffs never stretch them.
    The sky, the sea, the surf and the beam are shaders.
+   Scrolling on into the climb section flies the camera in through the door: inside is a hall with a stone stair winding
+   up the wall round an open well, and the work hangs beside it, each piece framed with its plaque. At the top a look
+   down the well takes in all of it, and a ladder leads out onto the lantern gallery; there night falls, and the ending
+   draws back out over the sea, where the lamp turns onto the camera and spells HELLO in Morse.
    app.js starts it with Lighthouse.init(opts) and drives it through the api that returns:
      opts  host, hero, flare, rays, night, reduce, fixed, scans (folder of the textures), content (selector of page
-           parts that are not the scene), twin {line, sync, live, skipped, end}, onReady(), onHot(on), onToggle()
-     api   setNight(night, instant) */
+           parts that are not the scene), twin {line, sync, live, skipped, end}, onReady(), onHot(on), onToggle(),
+           climb (the section), fade (the dip to dark and light), bar (the progress line), onClimb({phase, index}),
+           onMorse({on, li, si}) (the lamp's signal: on or off, the letter and the dot or dash it is showing)
+     api   setNight(night, instant), setWorks([{cover, plaque}]) (canvases, one pair per piece), climbScreens(n) */
 (function(){
 "use strict";
 var T=window.THREE,TAU=Math.PI*2,D=Math.PI/180;
@@ -31,8 +37,19 @@ function dirOf(az,el){return new T.Vector3(Math.sin(az)*Math.cos(el),Math.sin(el
 var LH={x:17,z:-25},TOWER=11.2,LAMP_Y=TOWER+1.87;
 /* sea stacks: x, z, radius, height above the water */
 var STACKS=[[1.5,-13,2.2,8.5],[2.6,-29.5,1.6,6],[8.4,-38,2.1,8.2],[11.8,-11,1.3,3.4],[5.2,-21.5,1,2.4],[25.5,-8.2,1.6,4.2]];
-/* the photo scans, in assets/tex: rock for the cliffs, lichen-covered rock above it, turf, plaster, slate */
-var SCANS=["rock_diff","rock_nor","moss_diff","moss_nor","grass_diff","grass_nor","wall_diff","wall_nor","roof_diff","roof_nor"];
+/* the photo scans, in assets/tex: rock for the cliffs, lichen-covered rock above it, turf, plaster */
+var SCANS=["rock_diff","rock_nor","moss_diff","moss_nor","grass_diff","grass_nor","wall_diff","wall_nor"];
+/* the climb, in screens of scroll into its section: through the door, inside, on the stair, then one piece per PER
+   screens; the landing and the ladder (C_LEFT); and the ending outside (C_END) */
+var C_DOOR=.25,C_IN=.33,C_W0=.75,PER=.6,C_LEFT=1.5,C_END=1.8;
+function climbScreens(n){return C_W0+n*PER+C_LEFT+C_END;}
+/* the lamp's signal at the end: HELLO in Morse. A dot is one unit of light, a dash three; one unit of dark between the
+   parts of a letter, three between letters, and a long rest before it starts again. The unit keeps the flashing under
+   three a second */
+var MORSE={H:"....",E:".",L:".-..",O:"---"},MWORD="HELLO",MUNIT=210,MSEQ=[];
+Array.from(MWORD).forEach(function(ch,li,w){var code=MORSE[ch]||"";Array.from(code).forEach(function(sy,si){MSEQ.push([1,sy==="."?1:3,li,si]);if(si<code.length-1)MSEQ.push([0,1,li,-1]);});
+  MSEQ.push(li<w.length-1?[0,3,li,-1]:[0,9,w.length,-1]);});
+var MTOTAL=MSEQ.reduce(function(a,q){return a+q[1];},0)*MUNIT;
 
 /* ---------- the sky, shared by the dome, the sea's reflections and its haze ----------
    Colours are display colours: these shaders skip tone mapping, and the fog on the lit materials (which three.js
@@ -172,6 +189,13 @@ var SEA_FS=[GLSL_SKY,
 var BEAM_VS="uniform float uLen;varying float vT;varying vec3 vN;varying vec3 vV;void main(){vT=position.z/uLen;vec4 w=modelMatrix*vec4(position,1.);vN=normalize(mat3(modelMatrix)*normal);vV=normalize(cameraPosition-w.xyz);gl_Position=projectionMatrix*viewMatrix*w;}";
 var BEAM_FS="uniform float uI;varying float vT;varying vec3 vN;varying vec3 vV;void main(){float e=pow(abs(dot(normalize(vN),normalize(vV))),1.4);float a=pow(clamp(1.-vT,0.,1.),2.)*smoothstep(0.,.015,vT);gl_FragColor=vec4(vec3(1.,.87,.64)*e*a*uI*.34,1.);}";
 
+/* the plants nod in the wind: the tops of the cards sway, each clump a little out of step with its neighbours */
+var PLANT_SWAY=["#include <begin_vertex>","#ifdef USE_INSTANCING","vec3 tq=instanceMatrix[3].xyz;",
+"float tsw=sin(uTime*1.7+tq.x*.55+tq.z*.35)*.6+sin(uTime*2.9+tq.x*1.3-tq.z*.8)*.3;","transformed.xz+=vec2(.11,.05)*tsw*uv.y*uv.y;","#endif"].join("\n");
+/* how directly the camera looks through a plant toward the sun, for the light that comes through the blades */
+var PLANT_BACK=["#include <project_vertex>","vec4 bw=vec4(transformed,1.);","#ifdef USE_INSTANCING","bw=instanceMatrix*bw;","#endif",
+"bw=modelMatrix*bw;vBack=pow(max(dot(normalize(bw.xyz-cameraPosition),uSun),0.),5.)*(.3+.7*uv.y);"].join("\n");
+
 /* the twin: everything drawn as a lattice that spreads out from the lighthouse */
 var WIRE_VS=["varying vec3 vW;","void main(){vec4 p=vec4(position,1.);","#ifdef USE_INSTANCING","p=instanceMatrix*p;","#endif","vec4 w=modelMatrix*p;vW=w.xyz;gl_Position=projectionMatrix*viewMatrix*w;}"].join("\n");
 var WIRE_FS="uniform float uR,uA;uniform vec3 uO,uCol;varying vec3 vW;void main(){float d=length(vW.xz-uO.xz);if(d>uR)discard;float front=smoothstep(uR-7.,uR,d);float fade=1.-smoothstep(90.,340.,d)*.8;gl_FragColor=vec4(uCol*(.6+1.3*front),(.3+.7*front)*fade*uA);}";
@@ -233,7 +257,7 @@ function init(o){
   var scene=new T.Scene(),camera=new T.PerspectiveCamera(40,1,.5,5000),fx=new T.Group();
   scene.fog=new T.FogExp2(0xc98a58,.0042);scene.add(fx);
   var U={uSun:{value:new T.Vector3()},uMoon:{value:new T.Vector3()},uNight:{value:0},uTime:{value:0}};
-  var W=1,H=1,yardH=0,verts=0,lookX=0,sky=null,seaMat=null,ridges=[],gulls=null,dust=null,beam=null,glow=null,lampMesh=null,glassMat=null,winMat=null,lampL=null,homeL=null,hits=[];
+  var W=1,H=1,yardH=0,verts=0,lookX=0,sky=null,seaMat=null,ridges=[],gulls=null,dust=null,beam=null,glow=null,lampMesh=null,glassMat=null,lampL=null,hits=[];
   var sunDir=new T.Vector3(),moonDir=new T.Vector3(),LAMP=new T.Vector3(LH.x,0,LH.z),beamDir=new T.Vector3(1,0,0);
   var ANI=Math.min(8,renderer.capabilities.getMaxAnisotropy()),TEX={},scanned=false;
   function lin(hex){return new T.Color(hex).convertSRGBToLinear();}
@@ -243,13 +267,29 @@ function init(o){
   function glowTex(){var c=document.createElement("canvas");c.width=c.height=128;var x=c.getContext("2d"),g=x.createRadialGradient(64,64,0,64,64,64);
     g.addColorStop(0,"rgba(255,255,255,1)");g.addColorStop(.18,"rgba(255,255,255,.55)");g.addColorStop(.5,"rgba(255,255,255,.12)");g.addColorStop(1,"rgba(255,255,255,0)");x.fillStyle=g;x.fillRect(0,0,128,128);return new T.CanvasTexture(c);}
 
+  // a four-panel door in old green paint, with a brass knob
+  function doorTex(){var c=document.createElement("canvas");c.width=256;c.height=512;var x=c.getContext("2d"),r=rng(5),i;
+    x.fillStyle="#2E4A3C";x.fillRect(0,0,256,512);
+    [[28,34,90,206],[138,34,90,206],[28,272,90,206],[138,272,90,206]].forEach(function(p){x.fillStyle="#36584A";x.fillRect(p[0],p[1],p[2],p[3]);
+      x.fillStyle="rgba(255,255,255,.13)";x.fillRect(p[0],p[1],p[2],4);x.fillRect(p[0],p[1],4,p[3]);x.fillStyle="rgba(0,0,0,.3)";x.fillRect(p[0],p[1]+p[3]-4,p[2],4);x.fillRect(p[0]+p[2]-4,p[1],4,p[3]);});
+    for(i=0;i<900;i++){x.fillStyle="rgba(0,0,0,"+(r()*.08).toFixed(3)+")";x.fillRect(r()*256,r()*512,1+r()*2,4+r()*14);}
+    x.fillStyle="#C9A45A";x.beginPath();x.arc(212,262,7,0,TAU);x.fill();
+    var t=new T.CanvasTexture(c);t.encoding=T.sRGBEncoding;t.anisotropy=ANI;return t;}
+  // gravel: small stones on a dusty ground, tiling
+  function gravelTex(){var S=256,c=document.createElement("canvas");c.width=c.height=S;var x=c.getContext("2d"),r=rng(12),i,W5=[[0,0],[S,0],[-S,0],[0,S],[0,-S]];
+    x.fillStyle="#8E8170";x.fillRect(0,0,S,S);
+    // each stone is drawn again one tile over on every side, so the edges wrap
+    for(i=0;i<2600;i++){var px=r()*S,py=r()*S,rr=1+r()*3.2,v=Math.round(120+r()*95),rot=r()*3;x.fillStyle="rgb("+v+","+Math.round(v*.95)+","+Math.round(v*.86)+")";
+      W5.forEach(function(q){x.beginPath();x.ellipse(px+q[0],py+q[1],rr,rr*.75,rot,0,TAU);x.fill();});}
+    var t=new T.CanvasTexture(c);t.wrapS=t.wrapT=T.RepeatWrapping;t.encoding=T.sRGBEncoding;t.anisotropy=ANI;return t;}
+
   /* ---------- the scans; without them (opened from disk, or offline) the scene falls back to flat colour ---------- */
   function loadScans(){
     if(location.protocol==="file:")return Promise.resolve(false);
     var dir=o.scans||"assets/tex/",n=0,loader=new T.TextureLoader();
     return new Promise(function(res){
       SCANS.forEach(function(k){loader.load(dir+k+".webp",function(t){
-        t.wrapS=t.wrapT=T.RepeatWrapping;t.anisotropy=ANI;if(k==="wall_diff"||k==="roof_diff")t.encoding=T.sRGBEncoding;TEX[k]=t;n++;
+        t.wrapS=t.wrapT=T.RepeatWrapping;t.anisotropy=ANI;if(k==="wall_diff")t.encoding=T.sRGBEncoding;TEX[k]=t;n++;
         if(tw)tw.line("scans","archivist","stone scans "+n+"/"+SCANS.length);if(n===SCANS.length)res(true);},undefined,function(){res(false);});});
     });
   }
@@ -279,6 +319,13 @@ function init(o){
     var ex=(wx-19)/12.5,ez=(wz+25)/9.5,pro=(1-Math.sqrt(ex*ex+ez*ez))*9.5;
     var back=Math.max(0,-wz-22),front=Math.max(0,wz+8),main=(wx-(29+.0032*back*back+.03*front*front))*.85;
     return Math.max(pro,main)+(fbm(x*.05+3,z*.05+7,4)-.5)*5+(ridged(x*.3+1.3,z*.3+.7)-.55)*2-Math.max(0,x-112)*.6-Math.max(0,-z-180)*.6;
+  }
+  // the same coast without its fine detail: its gradient is the inland direction the cliff rows are pulled along
+  function landD0(x,z){
+    var wx=x+(fbm(x*.08+2,z*.08,3)-.5)*4+(fbm(x*.21,z*.21,3)-.5)*3,wz=z+(fbm(x*.08+5,z*.08+2,3)-.5)*4+(fbm(x*.21+9,z*.21+4,3)-.5)*3;
+    var ex=(wx-19)/12.5,ez=(wz+25)/9.5,pro=(1-Math.sqrt(ex*ex+ez*ez))*9.5;
+    var back=Math.max(0,-wz-22),front=Math.max(0,wz+8),main=(wx-(29+.0032*back*back+.03*front*front))*.85;
+    return Math.max(pro,main)+(fbm(x*.05+3,z*.05+7,4)-.5)*5;
   }
   function topAt(x,z,d){return 7.4+(fbm(x*.03+11,z*.03+2,4)-.5)*4.6+sstep(26,95,x-z*.2)*8+(fbm(x*.2,z*.2,3)-.5)*.7+Math.max(0,d-14)*.05;}
   // how wide the coastal ramp is in the height field; it becomes the foot, the wall and the lip of the cliff
@@ -311,7 +358,7 @@ function init(o){
     for(j=0;j<nz;j++)for(i=0;i<nx;i++){k=j*nx+i;var x=XS[i],z=ZS[j],y=heightAt(x,z),d=landD(x,z),w=d>-.3?cliffW(x,z):0;
       // pull the ramp upright along the inland direction: its rows become the foot, the wall and the lip
       if(d>-.3&&d<w){var u=(d+.3)/(w+.3),dd=(profile(u)[0]-u)*(w+.3);
-        var gx=(landD(x+e,z)-landD(x-e,z))/(2*e),gz=(landD(x,z+e)-landD(x,z-e))/(2*e),g=Math.hypot(gx,gz)||1;
+        var gx=(landD0(x+e,z)-landD0(x-e,z))/(2*e),gz=(landD0(x,z+e)-landD0(x,z-e))/(2*e),g=Math.hypot(gx,gz)||1;
         // where the field is flat its gradient says little: never move a vertex further than the ramp is wide
         var mv=clamp(dd/Math.max(g,.6),-(w+.3),w+.3);x+=gx/g*mv;z+=gz/g*mv;}
       pos[k*3]=x;pos[k*3+1]=y;pos[k*3+2]=z;uv[k*2]=x*.05;uv[k*2+1]=z*.05;}
@@ -396,24 +443,32 @@ function init(o){
     scene.add(new T.Mesh(g,seaMat));size();
   }
 
-  /* ---------- the lighthouse and the keeper's cottage: lime plaster, a slate roof, dry-stone walls ---------- */
+  /* ---------- the lighthouse: lime plaster in red and white bands, dressed stone, an iron gallery and lantern ---------- */
   function buildTower(){
     var g=new T.Group(),parts=0;g.position.set(LH.x,yardH,LH.z);scene.add(g);
     function plaster(hex,rough){var m=std(hex,rough||.86);if(scanned){m.map=TEX.wall_diff;m.normalMap=TEX.wall_nor;m.normalScale.set(.9,.9);}m.envMapIntensity=.6;return m;}
-    var white=plaster(0xF2ECE2),red=plaster(0x9A3328,.8),wall=plaster(0xE9E1D3),iron=std(0x1C1D22,.42,.6),stone=scanned?scanMat():std(0x8F8574,.95),dark=std(0x2B2420,.7),frame=std(0xEDE8DF,.6);
-    var slate=std(scanned?0xFFFFFF:0x3A3E46,.62,.05);if(scanned){slate.map=TEX.roof_diff;slate.normalMap=TEX.roof_nor;}slate.side=T.DoubleSide;slate.envMapIntensity=.7;
+    var white=plaster(0xF2ECE2),red=plaster(0x9A3328,.8),iron=std(0x1C1D22,.42,.6),frame=std(0xEDE8DF,.6),pane=std(0x1D232B,.38,.2);
+    // dressed stone for the plinth, the sills and the step: plain, so no turf grows on it
+    var stone=std(0xCFC7B8,.88);if(scanned){stone.map=TEX.moss_diff;stone.normalMap=TEX.moss_nor;stone.normalScale.set(.55,.55);}
+    var doorM=new T.MeshStandardMaterial({map:doorTex(),roughness:.5,metalness:0});
     function P(geo,mat,x,y,z){parts++;return put(g,geo,mat,x,y,z);}
+    function trim(parent,list,mat,z,d){list.forEach(function(b){var m=new T.Mesh(new T.BoxGeometry(b[2],b[3],d),mat);m.position.set(b[0],b[1],z);m.castShadow=m.receiveShadow=true;parent.add(m);parts++;});}
     function rad(y){return 1.14+.48*Math.pow(1-y/TOWER,1.3);}
     // each band is a lathe; its UVs are set to metres so one plaster scan tiles evenly up the whole tower
     function band(y0,y1,mat){var pts=[];for(var i=0;i<=4;i++){var y=lerp(y0,y1,i/4);pts.push(new T.Vector2(rad(y),y));}
       var geo=new T.LatheGeometry(pts,48),uv=geo.attributes.uv,pp=geo.attributes.position;for(i=0;i<uv.count;i++)uv.setXY(i,uv.getX(i)*3,pp.getY(i)/2.8);P(geo,mat);}
-    P(new T.CylinderGeometry(2.1,2.35,1,10),stone,0,.3,0);
-    band(.8,2.2,white);band(2.2,4,red);band(4,6.6,white);band(6.6,8.4,red);band(8.4,TOWER,white);
+    P(new T.CylinderGeometry(2.1,2.35,.6,10),stone,0,.1,0);
+    band(.4,2.2,white);band(2.2,4,red);band(4,6.6,white);band(6.6,8.4,red);band(8.4,TOWER,white);
     // the door and windows face the camera's side of the headland
-    var fa=Math.atan2(0-LH.x,34-LH.z);
-    function onTower(geo,mat,y,da){var a=fa+da,r=rad(y)-.04,m=P(geo,mat,Math.sin(a)*r,y,Math.cos(a)*r);m.rotation.y=a;return m;}
-    onTower(new T.BoxGeometry(.72,1.35,.25),dark,1.48,0);onTower(new T.BoxGeometry(.9,.12,.3),frame,2.2,0);
-    [[3.1,.35],[5.4,-.25],[7.6,.3],[9.7,-.2]].forEach(function(w){onTower(new T.BoxGeometry(.28,.5,.16),dark,w[0],w[1]);onTower(new T.BoxGeometry(.38,.07,.22),frame,w[0]-.28,w[1]);});
+    var fa=FA;
+    function onTower(geo,mat,y,da,out){var a=fa+da,r=rad(y)+(out==null?-.04:out),m=P(geo,mat,Math.sin(a)*r,y,Math.cos(a)*r);m.rotation.y=a;return m;}
+    // the door: panelled and painted, in a white architrave, with a stone step up to the plinth
+    var dr=onTower(new T.BoxGeometry(.8,1.66,.12),doorM,1.23,0);trim(dr,[[0,.89,1.02,.12],[-.46,0,.1,1.66],[.46,0,.1,1.66]],frame,.04,.08);
+    var st=P(new T.BoxGeometry(1.15,.2,.45),stone,Math.sin(fa)*2.55,.1,Math.cos(fa)*2.55);st.rotation.y=fa;
+    // small deep-set windows up the stair, each with a stone sill. The glass sits just proud of the tapering wall (behind
+    // it, the curve would swallow it) and the frame stands further out, so the pane reads as set back
+    [[3.1,.35],[5.4,-.25],[7.6,.3],[9.7,-.2]].forEach(function(w){var pm=onTower(new T.BoxGeometry(.3,.52,.03),pane,w[0],w[1],.025);
+      trim(pm,[[0,.3,.44,.08],[0,-.3,.44,.08],[-.19,0,.08,.52],[.19,0,.08,.52]],frame,.04,.08);trim(pm,[[0,-.38,.52,.07]],stone,.08,.16);});
     P(scaleUV(new T.CylinderGeometry(1.55,rad(TOWER),.5,40),3,.2),white,0,TOWER+.25,0);
     P(new T.CylinderGeometry(1.66,1.66,.16,40),iron,0,TOWER+.58,0);
     [TOWER+.86,TOWER+1.12].forEach(function(y){var m=P(new T.TorusGeometry(1.58,.028,6,64),iron,0,y,0);m.rotation.x=Math.PI/2;});
@@ -426,50 +481,81 @@ function init(o){
     P(new T.ConeGeometry(1.14,.95,16),red,0,TOWER+3,0);
     P(new T.SphereGeometry(.16,10,8),iron,0,TOWER+3.55,0);
     P(new T.CylinderGeometry(.018,.018,.75,4),iron,0,TOWER+3.95,0);
-    // a low dry-stone wall round the back of the yard
-    var wl=P(new T.CylinderGeometry(6.2,6.2,.6,64,1,true,.55*Math.PI,1.05*Math.PI),stone,0,.22,0);wl.material=stone.clone();wl.material.side=T.DoubleSide;
-    if(scanned)wl.material.onBeforeCompile=stone.onBeforeCompile;
-    // the cottage, beside the tower on the inland side
-    var c=new T.Group();c.position.set(6.2,0,-2.6);c.rotation.y=-.35;g.add(c);
-    var box=new T.BoxGeometry(5.4,2.5,3.4),buv=box.attributes.uv,dims=[[3.4,2.5],[3.4,2.5],[5.4,3.4],[5.4,3.4],[5.4,2.5],[5.4,2.5]];
-    for(i=0;i<buv.count;i++){var dm=dims[(i/4)|0];buv.setXY(i,buv.getX(i)*dm[0]/2.4,buv.getY(i)*dm[1]/2.4);}
-    parts++;put(c,box,wall,0,1.25,0);
-    // the roof: two slate slopes with eaves, plastered gables under them and a ridge cap
-    var half=1.95,rise=1.45,slope=Math.hypot(half,rise),pitch=Math.atan2(half,rise);
-    [0,Math.PI].forEach(function(ry){var sg=new T.Group();sg.rotation.y=ry;c.add(sg);
-      var pl=new T.Mesh(scaleUV(new T.PlaneGeometry(5.9,slope+.2),5.9/1.6,(slope+.2)/1.6),slate);pl.position.set(0,2.5+rise/2-.06,half/2+.04);pl.rotation.x=-pitch;pl.castShadow=pl.receiveShadow=true;sg.add(pl);parts++;});
-    var gs=new T.Shape(),eave=rise*(1-1.7/half);gs.moveTo(-1.7,0);gs.lineTo(1.7,0);gs.lineTo(1.7,eave);gs.lineTo(0,rise-.04);gs.lineTo(-1.7,eave);gs.closePath();
-    [-2.7,2.7].forEach(function(x){var gg=new T.ShapeGeometry(gs);scaleUV(gg,1/2.4,1/2.4);var m=new T.Mesh(gg,wall);m.position.set(x,2.5,0);m.rotation.y=x<0?-Math.PI/2:Math.PI/2;m.castShadow=m.receiveShadow=true;c.add(m);parts++;});
-    parts++;put(c,new T.BoxGeometry(5.95,.12,.24),slate,0,2.5+rise+.02,0);
-    parts++;put(c,new T.BoxGeometry(.55,1.3,.55),stone,1.6,3.55,.35);
-    [-.12,.12].forEach(function(dx){parts++;put(c,new T.CylinderGeometry(.08,.1,.28,10),std(0x8a5a44,.8),1.6+dx,4.34,.35);});
-    // a stone plinth at the foot of the walls, boards along the eaves, a canopy over the door
-    parts++;put(c,new T.BoxGeometry(5.52,.38,3.52),stone,0,.19,0);
-    [1,-1].forEach(function(sd){parts++;put(c,new T.BoxGeometry(5.9,.15,.05),dark,0,2.44,sd*2.02);});
-    parts++;put(c,new T.BoxGeometry(1.15,.08,.48),dark,0,1.7,1.93);
-    // windows: glass that glows at dusk, in white frames with a cross of glazing bars
-    winMat=new T.MeshBasicMaterial({color:0x1c1f26,toneMapped:false});
-    function windowAt(x,y,z,ry){var wg=new T.Group();wg.position.set(x,y,z);wg.rotation.y=ry;c.add(wg);var ww=.6,wh=.8,f=.07;
-      wg.add(new T.Mesh(new T.PlaneGeometry(ww,wh),winMat));
-      [[0,wh/2,ww+f,f],[0,-wh/2-.02,ww+f*2,f*1.4],[ww/2,0,f,wh],[-ww/2,0,f,wh],[0,0,f*.55,wh],[0,.08,ww,f*.55]].forEach(function(b){var m=new T.Mesh(new T.BoxGeometry(b[2],b[3],.06),frame);m.position.set(b[0],b[1],.02);wg.add(m);});
-      parts++;}
-    windowAt(-1.7,1.45,1.71,0);windowAt(1.7,1.45,1.71,0);windowAt(-2.71,1.45,0,-Math.PI/2);
-    var dm2=new T.Mesh(new T.BoxGeometry(.82,1.55,.08),std(0x3B2A22,.7));dm2.position.set(0,.78,1.72);c.add(dm2);parts++;
-    homeL=new T.PointLight(0xffb060,0,13,2);homeL.position.set(0,1.4,3.2);c.add(homeL);
-    // what a click can hit: the tower and the cottage (kept out of the scene, so nothing draws them)
-    var inv=new T.MeshBasicMaterial({visible:false});
-    var ht=new T.Mesh(new T.CylinderGeometry(2.4,2.4,17,12),inv);ht.position.set(LH.x,yardH+8.5,LH.z);ht.updateMatrixWorld();
-    var hc=new T.Mesh(new T.BoxGeometry(6,4.2,4.2),inv);g.updateMatrixWorld(true);hc.applyMatrix4(c.matrixWorld);hc.position.y+=2;hc.updateMatrixWorld();
-    hits=[ht,hc];
+    // what a click can hit: the tower (kept out of the scene, so nothing draws it)
+    var ht=new T.Mesh(new T.CylinderGeometry(2.4,2.4,17,12),new T.MeshBasicMaterial({visible:false}));ht.position.set(LH.x,yardH+8.5,LH.z);ht.updateMatrixWorld();
+    hits=[ht];
     LAMP.set(LH.x,yardH+LAMP_Y,LH.z);
     return parts;
+  }
+
+  /* ---------- the turf: grass, thrift and gorse over the top of the headland, and a gravel path ----------
+     Each plant is three crossed cards with a painted clump on them, instanced by the thousand and nodding in the
+     wind; their normals point up, so they take the light the way the ground under them does. They grow on the
+     clifftop up to the lip, never on the yard's path or under the buildings, thickest round the lighthouse. */
+  // where the clifftop is, in its final (pulled) shape: null over the wall and the sea
+  function surfaceAt(x,z){var d=landD(x,z),w=cliffW(x,z);if(d>=w)return heightAt(x,z);
+    var X=(d+.3)/(w+.3);if(X<.42)return null;
+    var h=topAt(x,z,d)*(.97+(.84+(X-.33)/4.1875-.84)*.1875),dl=Math.hypot(x-LH.x,z-LH.z);
+    return dl<11?lerp(h,yardH,1-sstep(6.5,10.5,dl)):h;}
+  function plantTex(seed,kind){var S=256,cv=document.createElement("canvas");cv.width=cv.height=S;var x=cv.getContext("2d"),r=rng(seed),gorse=kind==="gorse",i;
+    // short sea turf: mostly greens, a few sun-dried blades; gorse darker and denser
+    var PAL=gorse?["#2C3A1C","#3B4A22","#4E5D2A"]:["#2E4318","#3A521E","#466024","#55692A","#667332"],TIP=gorse?null:["#7A8840","#86904A","#6E7F3A"];x.lineCap="round";
+    for(i=0;i<(gorse?130:95);i++){var bx=S/2+(r()-.5)*S*.64,len=S*(.32+r()*.6),lean=(r()-.5)*S*.5,c0=PAL[(r()*PAL.length)|0],gr=x.createLinearGradient(0,S,0,S-len);
+      gr.addColorStop(0,"#1E2812");gr.addColorStop(.4,c0);gr.addColorStop(1,gorse?c0:TIP[(r()*TIP.length)|0]);
+      x.strokeStyle=gr;x.lineWidth=2+r()*3;x.beginPath();x.moveTo(bx,S);x.quadraticCurveTo(bx+lean*.25,S-len*.55,bx+lean,S-len);x.stroke();}
+    if(kind){var fc=gorse?["#F2C230","#E8B020","#F6D35A"]:["#E07FA8","#EFA9C6","#D06A96"];
+      for(i=0;i<(gorse?70:12);i++){x.fillStyle=fc[(r()*fc.length)|0];x.beginPath();x.arc(S/2+(r()-.5)*S*.6,S*(.14+r()*(gorse?.6:.26)),gorse?2.5+r()*3:4+r()*4,0,TAU);x.fill();}}
+    var t=new T.CanvasTexture(cv);t.encoding=T.sRGBEncoding;t.anisotropy=ANI;return t;}
+  function plantGeo(){var P=[],UV=[],I=[],N=[],n=0;
+    for(var k=0;k<4;k++){var a=k*Math.PI/4,ca=Math.cos(a),sa=Math.sin(a);
+      [[-.5,0],[.5,0],[.5,1],[-.5,1]].forEach(function(q){P.push(q[0]*ca,q[1],q[0]*sa);UV.push(q[0]+.5,q[1]);N.push(0,1,0);});I.push(n,n+1,n+2,n,n+2,n+3);n+=4;}
+    var g=new T.BufferGeometry();g.setAttribute("position",new T.Float32BufferAttribute(P,3));g.setAttribute("uv",new T.Float32BufferAttribute(UV,2));g.setAttribute("normal",new T.Float32BufferAttribute(N,3));g.setIndex(I);return g;}
+  // matte (Lambert), not physical: cards seen edge-on against a low sun would catch a grazing highlight and flare white
+  // a warm tint holds the green against the cool sky that lights the shaded side of the headland; and looking toward the
+  // low sun, the blades glow at their edges, the light coming through them (strongest at the tips, gone by night)
+  var GLOW_U={value:new T.Color(0,0,0)},PLANT_M=[];
+  function plantMat(tex){var m=new T.MeshLambertMaterial({map:tex,alphaTest:.3,side:T.DoubleSide,color:new T.Color(1.08,1.12,.74)});PLANT_M.push(m);
+    m.onBeforeCompile=function(sh){sh.uniforms.uTime=U.uTime;sh.uniforms.uSun=U.uSun;sh.uniforms.uGlow=GLOW_U;
+      sh.vertexShader="uniform float uTime;\nuniform vec3 uSun;\nvarying float vBack;\n"+sh.vertexShader.replace("#include <begin_vertex>",PLANT_SWAY).replace("#include <project_vertex>",PLANT_BACK);
+      sh.fragmentShader="uniform vec3 uGlow;\nvarying float vBack;\n"+sh.fragmentShader.replace("#include <emissivemap_fragment>","#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*uGlow*vBack;");};
+    return m;}
+  var PATH=[];
+  function buildPlants(){
+    var r=rng(61),dx=Math.sin(FA),dz=Math.cos(FA),i,t;
+    // the path: from the tower's step, out across the yard and away inland
+    var curve=new T.CatmullRomCurve3([new T.Vector3(LH.x+dx*2.9,0,LH.z+dz*2.9),new T.Vector3(LH.x+2.4,0,LH.z+2.6),new T.Vector3(LH.x+5.2,0,LH.z+.15),new T.Vector3(LH.x+9.8,0,LH.z-1.4),new T.Vector3(LH.x+16,0,LH.z-4.6),new T.Vector3(LH.x+25,0,LH.z-7.5)]);
+    var n=120,pos=[],uv=[],idx=[],len=0,prev=null;
+    for(i=0;i<=n;i++){var p=curve.getPoint(i/n),tg=curve.getTangent(i/n),wd=.48+(noise(i*.3,2)-.5)*.16;if(prev)len+=p.distanceTo(prev);prev=p;PATH.push([p.x,p.z]);
+      [-1,1].forEach(function(sd){var px=p.x-tg.z*wd*sd,pz=p.z+tg.x*wd*sd,y=surfaceAt(px,pz);pos.push(px,(y===null?yardH:y)+.05,pz);uv.push(sd<0?0:1,len*.5);});
+      if(i)idx.push(i*2-2,i*2-1,i*2,i*2-1,i*2+1,i*2);}
+    var pg=new T.BufferGeometry();pg.setAttribute("position",new T.Float32BufferAttribute(pos,3));pg.setAttribute("uv",new T.Float32BufferAttribute(uv,2));pg.setIndex(idx);pg.computeVertexNormals();
+    var path=new T.Mesh(pg,new T.MeshStandardMaterial({map:gravelTex(),roughness:.97,polygonOffset:true,polygonOffsetFactor:-2}));path.receiveShadow=true;scene.add(path);
+    function pathDist(x,z){var best=1e9;for(var k=1;k<PATH.length;k++){var ax=PATH[k-1][0],az=PATH[k-1][1],bx=PATH[k][0]-ax,bz=PATH[k][1]-az,u=clamp(((x-ax)*bx+(z-az)*bz)/(bx*bx+bz*bz||1),0,1),qx=ax+bx*u-x,qz=az+bz*u-z;best=Math.min(best,qx*qx+qz*qz);}return Math.sqrt(best);}
+    // nothing grows under the tower or on the path
+    function blocked(x,z){return Math.hypot(x-LH.x,z-LH.z)<2.7||pathDist(x,z)<.62;}
+    var sets={grass:[],thrift:[],gorse:[]};
+    // within 32 m of the lighthouse; further out a clump would be smaller than a pixel, and the turf scan carries the hill
+    for(t=0;t<30000&&sets.grass.length<6500;t++){
+      var near=t%3!==0,a=r()*TAU,rr=near?Math.sqrt(r())*18:18+Math.sqrt(r())*14,x=LH.x+Math.cos(a)*rr+(near?0:5),z=LH.z+Math.sin(a)*rr;
+      if(blocked(x,z))continue;var y=surfaceAt(x,z);if(y===null)continue;
+      var kd=r(),set=kd<.05?sets.gorse:kd<.09?sets.thrift:sets.grass,s=set===sets.gorse?.9+r()*.7:set===sets.thrift?.4+r()*.25:.4+r()*.45;
+      set.push([x,y-.03,z,s,r()*TAU]);}
+    var geo=plantGeo(),o3=new T.Object3D(),made=0,HT={grass:.5,thrift:.75,gorse:.72};
+    [["grass",plantTex(71,"")],["thrift",plantTex(83,"thrift")],["gorse",plantTex(97,"gorse")]].forEach(function(q){var list=sets[q[0]];if(!list.length)return;
+      var im=new T.InstancedMesh(geo,plantMat(q[1]),list.length),tint=new T.Color();
+      // each clump a little lighter or darker, greener or yellower than the next
+      list.forEach(function(b,j){o3.position.set(b[0],b[1],b[2]);o3.rotation.set((r()-.5)*.12,b[4],(r()-.5)*.12);o3.scale.set(b[3]*1.1,b[3]*HT[q[0]],b[3]*1.1);o3.updateMatrix();im.setMatrixAt(j,o3.matrix);
+        var v=.78+r()*.3,yl=r()*.12;im.setColorAt(j,tint.setRGB(v+yl,v+yl*.6,v-yl*.4));});
+      im.receiveShadow=true;fx.add(im);made+=list.length;});
+    return num(made)+" tufts of grass, thrift and gorse, "+Math.round(len)+" m of path";
   }
 
   /* ---------- the lamp: its light, its glow and the beam ---------- */
   var GLOW=null;
   function buildLamp(){
     GLOW=glowTex();
-    lampL=new T.PointLight(0xffc27a,0,46,2);lampL.position.copy(LAMP);scene.add(lampL);
+    // the lens throws the light into the beam: what spills reaches the lantern and the gallery, not the ground
+    lampL=new T.PointLight(0xffc27a,0,13,2);lampL.position.copy(LAMP);scene.add(lampL);
     glow=new T.Sprite(new T.SpriteMaterial({map:GLOW,color:0xffd9a0,transparent:true,depthWrite:false,blending:T.AdditiveBlending,toneMapped:false,opacity:0}));
     glow.position.copy(LAMP);glow.scale.setScalar(7);fx.add(glow);
     var bm=new T.ShaderMaterial({vertexShader:BEAM_VS,fragmentShader:BEAM_FS,uniforms:{uLen:{value:170},uI:{value:0}},transparent:true,depthWrite:false,blending:T.AdditiveBlending,side:T.DoubleSide});
@@ -503,25 +589,223 @@ function init(o){
     dust=new T.Points(dg,new T.PointsMaterial({size:.16,map:GLOW,transparent:true,depthWrite:false,blending:T.AdditiveBlending,color:0xffd39a,opacity:.5}));fx.add(dust);
   }
 
+  /* ---------- the climb: inside the tower ----------
+     Bigger on the inside: a hall 11 m across, entered through the door, with a stone stair that winds up the wall
+     round an open well. Each piece of work hangs at eye level beside the stair, its illustration in a dark frame under a
+     brass picture light and its plaque to the right; windows between them glow with the hour outside. An iron ladder
+     past the top step climbs to the hatch of the lantern room. The stair is a helix: slot s sits at angle s*dTh and
+     height y0 + s*dY, the pieces at slots pre .. pre+N-1. */
+  // the climb runs wherever the scene is a fixed layer; it moves only as the visitor scrolls, so it stays under reduced
+  // motion too (with the idle drift off and no easing)
+  var climbEl=FIXED&&o.climb?o.climb:null,fadeEl=o.fade||null,barEl=o.bar||null,works=[],hall=null;
+  var HL={R:5.5,rIn:3.55,dTh:.74,dY:1.42,y0:.3,pre:1.5,post:1.3},hallHemi=null,hWinMat=null,winLights=[],camLight=null,hallDust=null;
+  var UP=new T.Vector3(0,1,0),tA=new T.Vector3(),tB=new T.Vector3(),tC=new T.Vector3(),FA=Math.atan2(0-LH.x,34-LH.z);
+  var WIN_DAY=new T.Color(1.25,.86,.58),WIN_NIGHT=new T.Color(.22,.3,.52),HH=[new T.Color(0xffe8d0),new T.Color(0x9fb0d8)],WL=[new T.Color(0xffc28a),new T.Color(0x8fa8e0)],HF=[new T.Color(0x2a221b),new T.Color(0x0d1018)];
+  function hallPos(s,r,yo,out){var th=s*HL.dTh;return out.set(Math.cos(th)*r,HL.y0+s*HL.dY+(yo||0),Math.sin(th)*r);}
+  // a matrix that stands a flat thing on the wall at angle th, facing the middle of the hall
+  function onWall(th,y,r){return new T.Matrix4().compose(tA.set(Math.cos(th)*r,y,Math.sin(th)*r),new T.Quaternion().setFromAxisAngle(UP,Math.atan2(-Math.cos(th),-Math.sin(th))),tB.set(1,1,1));}
+  function windowTex(){var c=document.createElement("canvas");c.width=64;c.height=128;var x=c.getContext("2d"),g=x.createLinearGradient(0,0,0,128);
+    g.addColorStop(0,"#fff4dc");g.addColorStop(.55,"#ffd9a6");g.addColorStop(1,"#f0a878");x.fillStyle=g;x.fillRect(0,0,64,128);
+    x.fillStyle="rgba(40,30,24,.85)";x.fillRect(30,0,4,128);x.fillRect(0,62,64,4);return new T.CanvasTexture(c);}
+  function buildHall(){
+    if(hall||!works.length||!built)return;
+    var N=works.length,S=HL.pre+N+HL.post,R=HL.R,rIn=HL.rIn,yEnd=HL.y0+S*HL.dY,top=yEnd+3.4,i,j,L=new T.Matrix4(),q=new T.Quaternion(),one=new T.Vector3(1,1,1);
+    HL.S=S;HL.yEnd=yEnd;HL.top=top;HL.thL=S*HL.dTh+.32;
+    hall=new T.Scene();hall.fog=new T.FogExp2(HF[0].getHex(),.026);
+    function mapped(hex,rough,d,n,ns){var m=std(hex,rough);if(scanned&&d){m.map=TEX[d];if(n){m.normalMap=TEX[n];m.normalScale.set(ns||1,ns||1);}}return m;}
+    function lit(cv,glow){var t=new T.CanvasTexture(cv);t.encoding=T.sRGBEncoding;t.anisotropy=ANI;return new T.MeshStandardMaterial({map:t,emissiveMap:t,emissive:new T.Color(1,1,1),emissiveIntensity:glow,roughness:.62});}
+    function hang(mesh,th,y,r){var M=onWall(th,y,r);mesh.matrix.copy(M);mesh.matrixAutoUpdate=false;hall.add(mesh);return M;}
+    var iron=std(0x1E1F23,.45,.6),brass=std(0xB38C4E,.35,.8),wood=std(0x2A1D15,.6);
+    // the wall, the floor and the ceiling: lime plaster and stone flags
+    var wallM=mapped(0xE6DBC9,.93,"wall_diff","wall_nor",.9);wallM.side=T.BackSide;
+    hall.add(new T.Mesh(scaleUV(new T.CylinderGeometry(R,R,top+1,96,1,true),Math.round(TAU*R/2.6),(top+1)/2.6),wallM).translateY((top+1)/2-.5));
+    var fl=new T.Mesh(scaleUV(new T.CircleGeometry(R,64),3,3),mapped(0xA9A294,.9,"moss_diff","moss_nor"));fl.rotation.x=-Math.PI/2;hall.add(fl);
+    var ce=new T.Mesh(new T.CircleGeometry(R,64),mapped(0xD9CFBD,.95,"wall_diff"));ce.rotation.x=Math.PI/2;ce.position.y=top;hall.add(ce);
+    // the stair: stone treads cantilevered from the wall, iron balusters, a brass handrail on the inner edge
+    var sd=6.5*D,ns=Math.ceil(S*HL.dTh/sd)+1,rise=HL.dY*sd/HL.dTh,rm=(rIn+R)/2;
+    var steps=new T.InstancedMesh(new T.BoxGeometry(R-rIn+.3,.16,rm*sd*1.18),mapped(0xF2EBDD,.85,"moss_diff","moss_nor",.6),ns),bal=new T.InstancedMesh(new T.CylinderGeometry(.015,.015,.92,6),iron,ns);
+    for(i=0;i<ns;i++){var th=i*sd,y=HL.y0+i*rise;
+      steps.setMatrixAt(i,L.compose(tA.set(Math.cos(th)*(rm+.08),y-.08,Math.sin(th)*(rm+.08)),q.setFromAxisAngle(UP,-th),one));
+      bal.setMatrixAt(i,L.compose(tA.set(Math.cos(th)*(rIn+.07),y+.46,Math.sin(th)*(rIn+.07)),q.identity(),one));}
+    hall.add(steps,bal);
+    var pts=[],wpts=[];for(i=0;i<=240;i++){pts.push(hallPos(i/240*S,rIn+.07,.93,new T.Vector3()));wpts.push(hallPos(i/240*S,R-.09,.9,new T.Vector3()));}
+    hall.add(new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(pts),900,.03,6,false),brass));
+    // and a second rail along the wall, as lighthouse stairs have
+    hall.add(new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(wpts),900,.022,6,false),iron));
+    // a landing past the last step, in front of the ladder
+    var land=new T.Mesh(new T.BoxGeometry(R-rIn+.3,.2,1.9),steps.material);land.position.set(Math.cos(S*HL.dTh+.2)*(rm+.08),yEnd-.1,Math.sin(S*HL.dTh+.2)*(rm+.08));land.rotation.y=-(S*HL.dTh+.2);hall.add(land);
+    // (the middle is an open well, as in towers whose stairs are cantilevered from the wall: from the top you can see
+    // down the whole spiral to the floor)
+    // the work: illustration, frame, picture light, plaque; and a window in each gap
+    var artG=new T.PlaneGeometry(1.4,.7875),plG=new T.PlaneGeometry(.76,.95),winG=new T.PlaneGeometry(.52,1.04);
+    var bars=new T.InstancedMesh(new T.BoxGeometry(1,1,1),wood,N*4+(N-1)*4),lamps=new T.InstancedMesh(new T.CylinderGeometry(.028,.028,.5,8),brass,N),nb=0;
+    hWinMat=new T.MeshBasicMaterial({map:windowTex(),color:WIN_DAY.clone(),toneMapped:false});
+    var FB=[[0,.4338,1.56,.08],[0,-.4338,1.56,.08],[-.74,0,.08,.7875],[.74,0,.08,.7875]],WB=[[0,.56,.62,.08],[0,-.56,.62,.08],[-.3,0,.08,1.04],[.3,0,.08,1.04]];
+    // hung as stairwell galleries are: each thing at a set height above the step beneath it, so the row climbs with the stair
+    function above(s,da,h){return HL.y0+(s+da/HL.dTh)*HL.dY+h;}
+    works.forEach(function(w,i){var s=HL.pre+i,th=s*HL.dTh;
+      var M=hang(new T.Mesh(artG,lit(w.cover,.42)),th-.085,above(s,-.085,1.74),R-.07);
+      FB.forEach(function(b){bars.setMatrixAt(nb++,new T.Matrix4().multiplyMatrices(M,L.compose(tA.set(b[0],b[1],.015),q.identity(),tB.set(b[2],b[3],.05))));});
+      lamps.setMatrixAt(i,new T.Matrix4().multiplyMatrices(M,L.compose(tA.set(0,.5,.13),q.setFromAxisAngle(tC.set(0,0,1),Math.PI/2),one)));
+      hang(new T.Mesh(plG,lit(w.plaque,.32)),th+.175,above(s,.175,1.6),R-.06);
+      if(i<N-1){var MW=hang(new T.Mesh(winG,hWinMat),th+.385,above(s,.385,2.05),R-.04);
+        WB.forEach(function(b){bars.setMatrixAt(nb++,new T.Matrix4().multiplyMatrices(MW,L.compose(tA.set(b[0],b[1],.02),q.identity(),tB.set(b[2],b[3],.08))));});}
+    });
+    bars.count=nb;hall.add(bars,lamps);
+    // the ladder and the hatch to the lantern room
+    var ML=onWall(HL.thL,(yEnd+top)/2,R-.02),lh=top-yEnd+.4;
+    [-.26,.26].forEach(function(dx){var m=new T.Mesh(new T.BoxGeometry(.05,lh,.05),iron);m.matrix.multiplyMatrices(ML,L.compose(tA.set(dx,0,.4),q.identity(),one));m.matrixAutoUpdate=false;hall.add(m);});
+    var rungs=new T.InstancedMesh(new T.BoxGeometry(.52,.035,.035),iron,Math.floor(lh/.3));
+    for(i=0;i<rungs.count;i++)rungs.setMatrixAt(i,new T.Matrix4().multiplyMatrices(ML,L.compose(tA.set(0,-lh/2+.25+i*.3,.4),q.identity(),one)));
+    hall.add(rungs);
+    var hatch=new T.Mesh(new T.PlaneGeometry(1.15,1.15),new T.MeshBasicMaterial({color:new T.Color(2.2,1.9,1.5),toneMapped:false}));
+    hatch.position.set(Math.cos(HL.thL)*(R-.75),top-.02,Math.sin(HL.thL)*(R-.75));hatch.rotation.set(Math.PI/2,0,-HL.thL);hall.add(hatch);
+    // light: the sky through the windows, a lantern carried up the stair, the bright hatch
+    hallHemi=new T.HemisphereLight(0xffe8d0,0x2c2219,.55);hall.add(hallHemi);
+    camLight=new T.PointLight(0xffd3a2,1.35,9.5,2);hall.add(camLight);
+    for(j=0;j<3;j++){var Lp=new T.PointLight(0xffc28a,.9,9,2);hallPos(HL.pre+(N-1)*(j+.5)/3+.4,R-1.3,2.4,Lp.position);hall.add(Lp);winLights.push(Lp);}
+    var hl=new T.PointLight(0xfff0d6,1.8,12,2);hl.position.copy(hatch.position).y-=.5;hall.add(hl);
+    // dust turning in the air
+    var nd=420,dp=new Float32Array(nd*3),r=rng(41);for(i=0;i<nd;i++){var a=r()*TAU,rr=Math.sqrt(r())*(R-.4);dp[i*3]=Math.cos(a)*rr;dp[i*3+1]=r()*top;dp[i*3+2]=Math.sin(a)*rr;}
+    var dg=new T.BufferGeometry();dg.setAttribute("position",new T.BufferAttribute(dp,3));
+    hallDust=new T.Points(dg,new T.PointsMaterial({size:.035,map:GLOW,transparent:true,depthWrite:false,blending:T.AdditiveBlending,color:0xffdcb0,opacity:.55}));hall.add(hallDust);
+    hallApplyK(U.uNight.value);
+    // compile and upload everything now, so the first step through the door doesn't stutter
+    renderer.compile(hall,camera);var wrt=new T.WebGLRenderTarget(16,16);
+    hall.traverse(function(n){if(n.isMesh||n.isPoints){n.fc=n.frustumCulled;n.frustumCulled=false;}});
+    renderer.setRenderTarget(wrt);renderer.render(hall,camera);renderer.setRenderTarget(null);
+    hall.traverse(function(n){if(n.isMesh||n.isPoints)n.frustumCulled=n.fc;});wrt.dispose();
+  }
+  function hallApplyK(e){if(!hall)return;hWinMat.color.copy(WIN_DAY).lerp(WIN_NIGHT,e);hallHemi.color.copy(HH[0]).lerp(HH[1],e);hallHemi.intensity=lerp(.55,.4,e);
+    winLights.forEach(function(L){L.color.copy(WL[0]).lerp(WL[1],e);L.intensity=lerp(.9,.55,e);});hall.fog.color.copy(HF[0]).lerp(HF[1],e);}
+  function hallReady(){if(!hall)buildHall();return !!hall;}
+  function cTop(){return C_W0+works.length*PER+C_LEFT;}
+  var cS=null,cV=0,climbState={phase:"?",index:-2},AP=null,ENTRY=null,END=null,VD=null;
+  /* how far into the climb section the page is, in screens. A critically damped spring follows the scroll, so the
+     camera gathers speed and comes to rest smoothly instead of lurching at each notch of the wheel; under reduced
+     motion it follows the scroll exactly */
+  function climbC(dt){if(!climbEl)return null;var raw=-climbEl.getBoundingClientRect().top/innerHeight;
+    if(cS===null||Math.abs(raw-cS)>2.5||reduce){cS=raw;cV=0;return cS;}
+    var h=Math.min(dt,64)/1000,n=Math.max(1,Math.ceil(h/.016)),w=6.5;h/=n;
+    for(var i=0;i<n;i++){cV+=(w*w*(raw-cS)-2*w*cV)*h;cS+=cV*h;}
+    if(Math.abs(raw-cS)<2e-4&&Math.abs(cV)<2e-3){cS=raw;cV=0;}
+    return cS;}
+  function state(ph,idx){if(ph===climbState.phase&&idx===climbState.index)return;climbState.phase=ph;climbState.index=idx;if(o.onClimb)o.onClimb({phase:ph,index:idx});}
+  var dA=new T.Vector3(),dB=new T.Vector3(),pA=new T.Vector3(),pB=new T.Vector3();
+  function aimAt(p,target,out){return out.subVectors(target,p).normalize();}
+  // turn from one view direction to another evenly (a normalised lerp), never swinging round through the camera
+  function blendDir(a,b,w,out){out.copy(a).lerp(b,w);var l=out.length();return l<1e-4?out.copy(b):out.multiplyScalar(1/l);}
+  // outside: over the sea, up over the cliff edge, across the yard and in at the door
+  function approachPose(c){
+    if(!AP){var dx=Math.sin(FA),dz=Math.cos(FA);AP={door:new T.Vector3(LH.x+dx*.6,yardH+1.4,LH.z+dz*.6),mid:new T.Vector3(LH.x,yardH+8,LH.z),
+      path:new T.CatmullRomCurve3([base.clone(),new T.Vector3(5,7.5,12),new T.Vector3(11,10.6,-8),new T.Vector3(LH.x+dx*5.2-.5,yardH+1.8,LH.z+dz*5.2),new T.Vector3(LH.x+dx*2.6,yardH+1.5,LH.z+dz*2.6)])};}
+    var a=sstep(0,1,(c+.75)/(C_DOOR+.75));
+    camera.position.lerp(AP.path.getPoint(a),sstep(0,.12,a));
+    look.lerp(AP.mid,sstep(0,.55,a)).lerp(AP.door,sstep(.6,1,a));
+  }
+  /* inside, the walk: on the stair beside its handrail, at a steady pace that eases a little at each piece (never
+     stopping, never rushing); the gaze rests on the wall a few steps ahead, at the height the work hangs, so each piece
+     and its plaque come into view, settle in the middle of the frame and move on, while the view turns only as fast as
+     the stair does. Every phase begins exactly where the last one ends, in place and in direction */
+  // (lead is how far ahead along the wall the gaze rests, in radians: near enough that each piece is seen at about 27°
+  // off square, so its plaque reads, with the head turned toward the wall the way a visitor's is)
+  var WALK={rc:3.75,lead:.24,a:.5};
+  function walkS(c){var u=(c-C_W0)/PER;return HL.pre+(.045-WALK.lead)/HL.dTh-.5+u+WALK.a*Math.sin(TAU*u)/TAU;}
+  function walkGaze(s,out){var s2=s+WALK.lead/HL.dTh,th=s2*HL.dTh;return out.set(Math.cos(th)*(HL.R-.1),HL.y0+s2*HL.dY+1.5,Math.sin(th)*(HL.R-.1));}
+  function hallPose(c){
+    var N=works.length,cW=C_W0+N*PER,dir=dA,s,c0=C_IN-.08;
+    if(c<C_W0){
+      // in at the door and across the floor onto the first steps, the gaze moving from the spiral of work climbing the
+      // far wall to the wall ahead. The pace eases in and arrives at the walk's own speed, so the climb carries straight on
+      if(!ENTRY){var s1=walkS(C_W0);ENTRY=new T.CatmullRomCurve3([new T.Vector3(Math.cos(-.95)*2.7,1.62,Math.sin(-.95)*2.7),new T.Vector3(Math.cos(-.45)*3.4,1.68,Math.sin(-.45)*3.4),
+          hallPos(0,WALK.rc,1.68,new T.Vector3()),hallPos(s1*.5,WALK.rc,1.68,new T.Vector3()),hallPos(s1,WALK.rc,1.68,new T.Vector3())],false,"centripetal");
+        ENTRY.m1=(1+WALK.a*Math.cos(0))/PER*Math.hypot(WALK.rc*HL.dTh,HL.dY)*(C_W0-c0)/ENTRY.getLength();}
+      var x=clamp((c-c0)/(C_W0-c0),0,1),t=-2*x*x*x+3*x*x+ENTRY.m1*(x*x*x-x*x);
+      ENTRY.getPointAt(clamp(t,0,1),camera.position);
+      aimAt(camera.position,hallPos(HL.pre+1.4,HL.R-.3,1.2,tC),dB);aimAt(camera.position,walkGaze(walkS(C_W0),tC),pA);
+      blendDir(dB,pA,sstep(.3,1,x),dir);state("inside",-1);}
+    else if(c<cW){
+      var u=(c-C_W0)/PER;s=walkS(c);hallPos(s,WALK.rc,1.68,camera.position);aimAt(camera.position,walkGaze(s,tC),dir);
+      state("work",clamp(Math.round(u-.5),0,N-1));}
+    else{
+      // on up the last steps, slowing to a stop on the landing; a lean over the rail to look down the open well at the
+      // whole spiral of work, the gaze travelling slowly round it; then across to the ladder and up it, toward the light
+      var t2=(c-cW)/C_LEFT,s0=walkS(cW),tau=clamp(t2/.24,0,1),m0=(1+WALK.a)/PER*C_LEFT*.24,S=HL.S,ta3=tau*tau*tau,ta2=tau*tau;
+      s=(2*ta3-3*ta2+1)*s0+(ta3-2*ta2+tau)*m0+(-2*ta3+3*ta2)*S;
+      hallPos(s,WALK.rc,1.68,pA);aimAt(pA,walkGaze(s,tC),dA);
+      // (each of these turns takes a third of a screen or more of scroll, so none of them snaps; the gaze lifts from
+      // the well before the turn to the ladder, so that turn is mostly a turn of the head, not a nod)
+      var thl=(S+.15)*HL.dTh,sw=sstep(.4,.56,t2)*.6,lift=sstep(.48,.6,t2);
+      hallPos(S+.15,HL.rIn-.2,1.55,pB);aimAt(pB,tC.set(Math.cos(thl+2.5+sw)*3,lerp(HL.yEnd-6.5,HL.yEnd-1.5,lift),Math.sin(thl+2.5+sw)*3),dB);
+      var wl=sstep(.18,.42,t2);camera.position.copy(pA).lerp(pB,wl);blendDir(dA,dB,wl,dir);
+      var wL=sstep(.56,.84,t2);
+      if(wL>0){pA.set(Math.cos(HL.thL)*(HL.R-1.2),lerp(HL.yEnd+1.68,HL.top+.5,sstep(.74,1,t2)),Math.sin(HL.thL)*(HL.R-1.2));camera.position.lerp(pA,wL);
+        aimAt(camera.position,tC.set(Math.cos(HL.thL)*(HL.R-.72),lerp(HL.yEnd+1.3,HL.top+1,sstep(.7,.97,t2)),Math.sin(HL.thL)*(HL.R-.72)),dB);
+        // turn round to the ladder always the same way (the way it is shortest from the rail), turning by yaw and pitch
+        var dy=wrapPI(yawPitch(dB)[0]-yawPitch(dir)[0]);if(HL.ladSign==null)HL.ladSign=dy>=0?1:-1;if(HL.ladSign>0&&dy<0)dy+=TAU;if(HL.ladSign<0&&dy>0)dy-=TAU;
+        turnDir(dir,dB,dy,wL,dir);}
+      state(t2<.56?"overview":"top",-1);}
+    camLight.position.copy(camera.position).y+=.35;
+    look.copy(camera.position).add(dir);
+  }
+  /* the end, outside. Out on the gallery the sun goes down over the sea (the scroll runs the clock on to night,
+     whatever the hour on the page) and the lamp catches behind you. You turn round to face it; then the camera draws
+     back off the gallery and round the point over the water, the lighthouse always in view, and comes to rest out at sea
+     like a boat on the swell, the lighthouse in the right of the frame. The beam swings round onto it, and the lamp
+     spells HELLO in Morse */
+  function yawPitch(v){return[Math.atan2(v.x,v.z),Math.asin(clamp(v.y,-1,1))];}
+  // a turn by yaw and pitch, the long way round when dYaw says so (a lerp of opposite directions would flip at once)
+  function turnDir(a,b,dYaw,w,out){var A=yawPitch(a),B=yawPitch(b),y=A[0]+dYaw*w,p=lerp(A[1],B[1],w);return out.set(Math.sin(y)*Math.cos(p),Math.sin(p),Math.cos(y)*Math.cos(p));}
+  function endPose(e,ts){
+    if(!END){VD=dirOf(-12*D,-5*D);var vh=new T.Vector3(VD.x,0,VD.z).normalize();
+      END=new T.CatmullRomCurve3([new T.Vector3(LH.x+vh.x*1.34,yardH+TOWER+2.35,LH.z+vh.z*1.34),new T.Vector3(LH.x+vh.x*9,yardH+TOWER+4,LH.z+vh.z*9),
+        new T.Vector3(LH.x-32,yardH+9,LH.z-4),new T.Vector3(LH.x-15.2,9,LH.z+52.9)],false,"centripetal");}
+    // (the camera starts drawing back while it turns, so by the time it faces the lamp it is well off the gallery)
+    var m=reduce?0:1,tf=sstep(.55,1.38,e);
+    END.getPointAt(tf,camera.position);
+    if(e<.82){if(tf<=0)camera.position.x+=Math.sin(ts*.1)*.04*m;aimAt(camera.position,LAMP,dB);
+      // the gaze out to sea, and the turn round to the lamp by way of the headland and its turf below
+      var wt=sstep(.42,.82,e),dy=wrapPI(yawPitch(dB)[0]-yawPitch(VD)[0]);if(dy>0)dy-=TAU;turnDir(VD,dB,dy,wt,dA);}
+    else{aimAt(camera.position,LAMP,dA);
+      // at rest the frame turns a little left, so the lighthouse sits right of the words
+      var off=sstep(.82,1,tf)*.17;if(off>0){dB.set(0,1,0).cross(dA).normalize();dA.multiplyScalar(Math.cos(off)).addScaledVector(dB,Math.sin(off)).normalize();}
+      camera.position.y+=(Math.sin(ts*.9)*.12+Math.sin(ts*.53)*.08)*m*sstep(.85,1,tf);}
+    look.copy(camera.position).add(dA);
+    state(e<.82?"lantern":e<1.4?"sweep":"signal",-1);
+  }
+  function fadeFor(c){var t=cTop();if(c<C_DOOR)return[sstep(C_DOOR-.12,C_DOOR,c),"#000"];if(c<C_IN)return[1-sstep(C_DOOR,C_IN,c),"#000"];
+    if(c<t)return[sstep(t-.12,t,c),"#fff3e0"];return[1-sstep(t,t+.14,c),"#fff3e0"];}
+  var fadeA="",fadeC="";
+  function setFade(a,col){if(!fadeEl)return;var s=a.toFixed(3);if(s!==fadeA){fadeEl.style.opacity=s;fadeA=s;}if(col!==fadeC){fadeEl.style.background=col;fadeC=col;}}
+
   /* ---------- light ---------- */
   var key=new T.DirectionalLight(0xffffff,2.5),fill=new T.DirectionalLight(0xffffff,.4),hemi=new T.HemisphereLight(0xffffff,0x000000,.5);
   key.castShadow=true;key.shadow.mapSize.set(2048,2048);
-  var sc=key.shadow.camera;sc.left=-30;sc.right=30;sc.top=30;sc.bottom=-30;sc.near=1;sc.far=280;key.shadow.bias=-.0004;key.shadow.normalBias=.04;
+  var sc=key.shadow.camera;sc.left=-30;sc.right=30;sc.top=30;sc.bottom=-30;sc.near=1;sc.far=280;key.shadow.bias=-.0008;key.shadow.normalBias=.12;
   fill.position.set(-30,24,60);
   scene.add(key,key.target,fill,hemi);
   var SUN_HI=new T.Color(0xffb766),SUN_LO=new T.Color(0xff7a3a),MOONC=new T.Color(0xa9c0ff);
   // the fill is the evening sky behind the camera: mauve and cool, so rock in shadow reads as sky-lit, not lamp-lit
   var HS=[new T.Color(0x8a90c4),new T.Color(0x22305e)],HG=[new T.Color(0x6a4a34),new T.Color(0x0a0d18)],FL=[new T.Color(0xb7a6bc),new T.Color(0x5a6fb0)];
-  var RIDGE_DARK=[[.36,.25,.31],[.012,.014,.028]],kd=new T.Vector3(),WIN_OFF=lin(0x1c1f26),WIN_ON=new T.Color(1.6,1.05,.55);
-  var k=o.night?1:0,kT=k,lampK=k,sunUp=1;
+  var RIDGE_DARK=[[.36,.25,.31],[.012,.014,.028]],kd=new T.Vector3();
+  var k=o.night?1:0,kT=k,lampK=k,sunUp=1,kA=-1,beamA=.9,mT=0,mKey="";
+  function wrapPI(a){a=(a+Math.PI)%TAU;if(a<0)a+=TAU;return a-Math.PI;}
+  // where the lamp is in its word, after ms of signalling: on or off, which letter and which dot or dash
+  function morse(ms){var tt=ms%MTOTAL,acc=0,q=MSEQ[0];for(var i=0;i<MSEQ.length;i++){q=MSEQ[i];acc+=q[1]*MUNIT;if(tt<acc)break;}
+    var key=q[0]+":"+q[2]+":"+q[3];if(key!==mKey){mKey=key;if(o.onMorse)o.onMorse({on:q[0],li:q[2],si:q[3]});}
+    // a shuttered lamp: a quick rise and fall at the edges of each flash
+    return q[0]?lerp(.05,1,clamp(Math.min(tt-(acc-q[1]*MUNIT),acc-tt)/45,0,1)):.05;}
   function applyK(kk){
-    var e=kk*kk*(3-2*kk),sk=sstep(0,.62,kk),mk=sstep(.25,1,kk);
+    kA=kk;var e=kk*kk*(3-2*kk),sk=sstep(0,.62,kk),mk=sstep(.25,1,kk);
     // the sun sets over the first 60% of the change; the moon rises over the last 75%
     sunDir.copy(dirOf(lerp(5,9,sk)*D,lerp(4.6,-9,sk)*D));moonDir.copy(dirOf(lerp(-8,3,mk)*D,lerp(-6,19,mk)*D));
     U.uSun.value.copy(sunDir);U.uMoon.value.copy(moonDir);U.uNight.value=e;
     sunUp=clamp((sunDir.y+.02)/.1,0,1);var moonUp=clamp(moonDir.y/.2,0,1);
     if(sunUp>0){kd.copy(sunDir);kd.y=Math.max(kd.y,.05);key.color.copy(SUN_HI).lerp(SUN_LO,1-sunUp);key.intensity=2.7*Math.pow(sunUp,.8);}
     else{kd.copy(moonDir);kd.y=Math.max(kd.y,.08);key.color.copy(MOONC);key.intensity=.55*moonUp;}
+    GLOW_U.value.copy(SUN_HI).multiplyScalar(1.9*sunUp*(1-e));
+    // under the moon the turf goes dark and grey-green, not blue
+    PLANT_M.forEach(function(pm){pm.color.setRGB(lerp(1.08,.66,e),lerp(1.12,.78,e),lerp(.74,.42,e));});
     kd.normalize();key.target.position.set(LH.x,yardH,LH.z);key.position.copy(key.target.position).addScaledVector(kd,130);
     hemi.color.copy(HS[0]).lerp(HS[1],e);hemi.groundColor.copy(HG[0]).lerp(HG[1],e);hemi.intensity=lerp(.62,.42,e);
     fill.color.copy(FL[0]).lerp(FL[1],e);fill.intensity=lerp(.42,.16,e);
@@ -531,13 +815,12 @@ function init(o){
       m.material.color.setRGB(lerp(c[0],lerp(dk[0][0],dk[1][0],e),s),lerp(c[1],lerp(dk[0][1],dk[1][1],e),s),lerp(c[2],lerp(dk[0][2],dk[1][2],e),s)).convertSRGBToLinear();});
     if(seaMat){seaMat.uniforms.uSunI.value=sunUp*(1-e*.6);seaMat.uniforms.uMoonI.value=moonUp*e;}
     if(dust){dust.material.color.set(0xffd39a).lerp(new T.Color(0x9db4ff),e);dust.material.opacity=lerp(.5,.18,e);}
-    if(winMat)winMat.color.copy(WIN_OFF).lerp(WIN_ON,sstep(.35,.75,kk));
-    if(homeL)homeL.intensity=1.3*sstep(.35,.75,kk);
     if(gulls)gulls.L.visible=gulls.R.visible=e<.55;
     renderer.toneMappingExposure=lerp(1,1.22,e);renderer.shadowMap.needsUpdate=true;
+    hallApplyK(e);
   }
-  function lamp(kk,t){
-    var f=kk<1&&kk>0?.75+.25*Math.abs(Math.sin(t*.037)*Math.sin(t*.011)):1,L=kk*f;
+  function lamp(kk,t,mf){
+    var f=kk<1&&kk>0?.75+.25*Math.abs(Math.sin(t*.037)*Math.sin(t*.011)):1,L=kk*f*(mf==null?1:mf);
     if(lampMesh)lampMesh.material.color.setRGB(lerp(.05,2.2,L),lerp(.045,1.9,L),lerp(.04,1.45,L));
     if(glassMat)glassMat.emissiveIntensity=1.4*L;
     if(lampL)lampL.intensity=2.4*L;
@@ -547,10 +830,10 @@ function init(o){
   }
 
   /* ---------- camera, size, pointer ---------- */
-  var base=new T.Vector3(0,5.6,34),look=new T.Vector3(),WALK_CAM=new T.Vector3(8,19,-10),WALK_LOOK=new T.Vector3(-50,12,-150),wc=new T.Vector3(),ptr={x:0,y:0,tx:0,ty:0};
+  var base=new T.Vector3(0,5.6,34),look=new T.Vector3(),ptr={x:0,y:0,tx:0,ty:0},fov0=40;
   function size(){W=host.clientWidth||innerWidth;H=host.clientHeight||innerHeight;renderer.setSize(W,H,false);var a=W/H;
-    camera.aspect=a;camera.fov=a<.8?56:a<1.3?46:40;lookX=a<1?11.7:a<1.45?5:0;camera.updateProjectionMatrix();
-    if(seaMat)seaMat.uniforms.uPix.value=camera.fov*D/H;}
+    camera.aspect=a;fov0=camera.fov=a<.8?56:a<1.3?46:40;lookX=a<1?11.7:a<1.45?5:0;camera.updateProjectionMatrix();
+    if(seaMat)seaMat.uniforms.uPix.value=fov0*D/H;}
   var ray=new T.Raycaster(),ndc=new T.Vector2(),hot=false;
   var CONTENT=o.content||"a,button,input,textarea,select,label,.card,.sheet,.filters,.hero-copy,footer";
   function overScene(e){var t=e.target;if(!FIXED)return host.contains(t);return !(t&&t.closest&&t.closest(CONTENT));}
@@ -574,13 +857,14 @@ function init(o){
     ["land","surveyor","surveying the headland",function(){buildLand();return"headland · "+num(verts)+" vertices, cliffs pulled upright";}],
     ["rocks","surveyor","placing stacks and scree",function(){return buildRocks();}],
     ["sea","hydrographer","laying the sea",function(){buildSea();return"sea · 14 wave trains, surf on every rock";}],
-    ["tower","mason","raising the tower",function(){return"tower, lantern, cottage · "+buildTower()+" parts";}],
+    ["tower","mason","raising the tower",function(){return"tower and lantern · "+buildTower()+" parts";}],
+    ["plants","gardener","sowing the turf",function(){return buildPlants();}],
     ["lamp","keeper","trimming the lamp",function(){buildLamp();return"lamp and beam · a turn every 9 s";}],
     ["sky","weather","drawing the sky",function(){buildSky();buildLife();return"sky dome, clouds, "+GULL.length+" gulls";}],
     ["compile","renderer","compiling shaders",function(){applyK(k);lamp(lampK,0);renderer.compile(scene,camera);return"shaders compiled";}]
   ];
   function step(i){
-    if(i>=STEPS.length){built=true;if(tw)tw.line("light","renderer","lighting the stone");else startLoop();return;}
+    if(i>=STEPS.length){built=true;if(tw)tw.line("light","renderer","lighting the stone");else startLoop();if(works.length&&climbEl)setTimeout(buildHall,900);return;}
     var s=STEPS[i];if(tw)tw.line(s[0],s[1],s[2]);
     setTimeout(function(){var a=performance.now();
       Promise.resolve().then(function(){return s[3]();}).then(function(txt){done++;
@@ -601,24 +885,43 @@ function init(o){
     raf=requestAnimationFrame(frame);
     if(document.hidden||!visible){last=t;return;}
     var dt=Math.min(100,t-(last||t));last=t;var ts=(t-t0)/1000,m=reduce?0:1;
-    if(k!==kT){var st=reduce?1:dt/7000;k=k<kT?Math.min(kT,k+st):Math.max(kT,k-st);applyK(k);}
-    var lt=k>.5?1:0;if(lampK!==lt){var ls=reduce?1:dt/(lt?1500:1100);lampK=lampK<lt?Math.min(lt,lampK+ls):Math.max(lt,lampK-ls);}
-    var L=lamp(lampK,t);
+    // the hour: the page's own, run on toward night by the scroll at the end of the climb
+    var c=climbC(dt),eEnd=c!==null&&works.length?c-cTop():-1,endN=eEnd>0?sstep(.1,.55,eEnd):0;
+    if(k!==kT){var st=reduce?1:dt/7000;k=k<kT?Math.min(kT,k+st):Math.max(kT,k-st);}
+    var kE=k+(1-k)*endN;if(kE!==kA)applyK(kE);
+    var lt=kE>.5?1:0;if(lampK!==lt){var ls=reduce?1:dt/(lt?1500:1100);lampK=lampK<lt?Math.min(lt,lampK+ls):Math.max(lt,lampK-ls);}
     U.uTime.value=reduce?0:ts;
-    // the camera: a slow drift, the pointer, and the scroll (on desktop it walks out toward the lantern)
+    // the camera: a slow drift and the pointer in the hero; then, on desktop, the scroll flies it in at the door and up
+    // the stair (on touch screens it only rises a little as the hero scrolls away)
     ptr.x+=(ptr.tx-ptr.x)*.04;ptr.y+=(ptr.ty-ptr.y)*.04;
-    var sy=window.scrollY||0,hh=o.hero?o.hero.offsetHeight:H,q=reduce?0:sstep(0,1,sy/Math.max(1,hh));
+    var sy=window.scrollY||0,hh=o.hero?o.hero.offsetHeight:H,q=reduce||climbEl?0:sstep(0,1,sy/Math.max(1,hh));
     camera.position.set(base.x+m*Math.sin(ts*.08)*1.6+ptr.x*1.2*m+(lookX?3:0),base.y+m*Math.sin(ts*.11)*.15-ptr.y*.3*m+q*2.6,base.z-m*(1-Math.cos(ts*.06))*1.2-q*5);
     look.set(lookX,9.5+q*1.2,-40);
-    if(FIXED&&!reduce){var span=Math.max(1,document.documentElement.scrollHeight-innerHeight-hh),wp=sstep(0,1,(sy-hh*.6)/span);
-      if(wp>0){camera.position.lerp(wc.copy(WALK_CAM),wp*.9);look.lerp(WALK_LOOK,wp);}}
+    var inside=false,near=.5,fov=fov0,fd=[0,"#000"];
+    if(c!==null&&c>-1&&works.length){fd=fadeFor(c);
+      if(c<C_DOOR){approachPose(c);state(c>-.6&&c<.16?"approach":"flight",-1);}
+      else if(eEnd<0){if(hallReady()){inside=true;hallPose(c);near=.05;fov=58;}else{approachPose(C_DOOR);fd=[1,"#000"];}}
+      else{endPose(eEnd,ts);near=eEnd<.86?.08:.5;}}
+    else if(climbEl)state("",-1);
+    if(camera.near!==near||camera.fov!==fov){camera.near=near;camera.fov=fov;camera.updateProjectionMatrix();}
+    setFade(fd[0],fd[1]);
+    if(barEl&&c!==null&&works.length){var bp=clamp((c-C_IN)/(cTop()-C_IN),0,1).toFixed(3);if(barEl._p!==bp){barEl._p=bp;barEl.style.transform="scaleY("+bp+")";}}
     camera.lookAt(look);
     if(sky)sky.position.copy(camera.position);
-    // the beam turns once every nine seconds; it flashes when it sweeps past the camera
-    var ba=reduce?.9:ts*TAU/9;beamDir.set(Math.sin(ba),0,Math.cos(ba));
-    if(beam)beam.rotation.y=ba;
+    // the beam turns once every nine seconds and flashes as it sweeps past the camera; at the end it swings round onto
+    // the camera and holds there, and the lamp signals
+    var lock=eEnd>0?sstep(1.25,1.45,eEnd):0,bt=Math.atan2(camera.position.x-LAMP.x,camera.position.z-LAMP.z);
+    if(reduce)beamA=lock>.5?bt:.9;
+    else{beamA+=TAU/9*dt/1000*(1-lock);if(lock>0)beamA+=wrapPI(bt-beamA)*Math.min(1,dt/320)*lock;beamA=wrapPI(beamA);}
+    beamDir.set(Math.sin(beamA),0,Math.cos(beamA));if(beam)beam.rotation.y=beamA;
+    var mf=1;
+    if(!reduce&&lock>.99&&eEnd>1.45&&Math.abs(wrapPI(bt-beamA))<.04){mT+=dt;mf=morse(mT);}
+    else if(mT||mKey){mT=0;mKey="";if(o.onMorse)o.onMorse({on:0,li:-1,si:-1});}
+    var L=lamp(lampK,t,mf),lampD=camera.position.distanceTo(LAMP);
+    // beside the lamp (on the gallery) the beam is not drawn: seen from within, its cone would only be a pale disc
+    if(beam&&lampD<10)beam.mat.uniforms.uI.value*=sstep(3,10,lampD);
     var cx=camera.position.x-LAMP.x,cz=camera.position.z-LAMP.z,cl=Math.hypot(cx,cz)||1,pulse=Math.pow(Math.abs((beamDir.x*cx+beamDir.z*cz)/cl),14);
-    if(glow){glow.material.opacity=L*(.55+.45*pulse);glow.scale.setScalar(6+12*pulse*L);}
+    if(glow){glow.material.opacity=L*(.55+.45*pulse);glow.scale.setScalar((6+12*pulse*L)*clamp(lampD/25,.08,1));}
     if(gulls&&gulls.L.visible){var g=gulls.o;GULL.forEach(function(b,i){var a=b.ph+ts*b.sp*m,x=b.cx+Math.cos(a)*b.R,z=b.cz+Math.sin(a)*b.R,y=b.h+Math.sin(ts*.3+b.ph)*1.1,
         th=Math.atan2(-Math.sin(a)*Math.sign(b.sp),Math.cos(a)*Math.sign(b.sp)),glide=.5+.5*Math.sin(ts*.7+b.ph*3),fl=m*Math.sin(ts*b.fl+b.ph)*(glide>.55?.12:.62);
         g.position.set(x,y,z);g.rotation.set(0,th,0);g.scale.set(b.sc,b.sc,b.sc);g.rotateZ(fl);g.updateMatrix();gulls.R.setMatrixAt(i,g.matrix);
@@ -633,12 +936,15 @@ function init(o){
       if(firstWire){firstWire=false;host.classList.add("on");if(tw)tw.live();}return;}
     renderer.setClearColor(0x000000,0);
     // deep under the veil the scene is only soft light and shade, so half the frames will do
-    frames++;if(ready&&FIXED&&sy>hh*1.2&&wireFade<=0&&frames%2)return;
-    if(wireFade>0){renderer.autoClear=false;renderer.clear();renderer.render(scene,camera);renderer.clearDepth();wire.uniforms.uA.value=wireFade;wire.uniforms.uR.value=1e4;wireOnly();renderer.autoClear=true;wireFade-=dt/(tw&&tw.skipped()?400:900);}
+    frames++;var deep=climbEl?c!==null&&c>cTop()+C_END+.6:sy>hh*1.2;if(ready&&FIXED&&deep&&wireFade<=0&&frames%2)return;
+    if(inside){hallDust.rotation.y=ts*.012;renderer.render(hall,camera);}
+    else if(wireFade>0){renderer.autoClear=false;renderer.clear();renderer.render(scene,camera);renderer.clearDepth();wire.uniforms.uA.value=wireFade;wire.uniforms.uR.value=1e4;wireOnly();renderer.autoClear=true;wireFade-=dt/(tw&&tw.skipped()?400:900);}
     else renderer.render(scene,camera);
     // the light in the lens: the sun by day, the lamp by night
     var sx=0,syy=0,fo=0,ro=0;
-    if(L>.5){vp.copy(LAMP).project(camera);fo=vp.z<1?L*(.16+.5*pulse):0;}
+    if(inside){}
+    // (while the lamp spells its word the flare is held down, so the flashes stay gentle)
+    else if(L>.5||mT){vp.copy(LAMP).project(camera);fo=vp.z<1&&camera.near>.2?L*(.16+.5*pulse):0;if(mT)fo=Math.min(fo,.38);}
     else{vp.copy(sunDir).multiplyScalar(1000).add(camera.position).project(camera);fo=vp.z<1?sunUp*.5*(1-U.uNight.value):0;ro=fo*.32;}
     sx=(vp.x*.5+.5)*W;syy=(-vp.y*.5+.5)*H;
     if(flare){flare.style.opacity=fo.toFixed(3);flare.style.transform="translate("+sx.toFixed(1)+"px,"+syy.toFixed(1)+"px)";}
@@ -651,7 +957,13 @@ function init(o){
   if(tw)renderer.setClearColor(0x06080E,1);
   step(0);
   return {
-    setNight:function(n,instant){kT=n?1:0;if(instant||reduce){k=kT;lampK=k;if(built)applyK(k);}}
+    setNight:function(n,instant){kT=n?1:0;if(instant||reduce){k=kT;lampK=k;if(built)applyK(k);}},
+    // the hall is built once the scene is, in a quiet moment, so the climb is ready before anyone reaches the door
+    setWorks:function(list){if(hall||!climbEl)return;works=list||[];if(built)setTimeout(buildHall,600);},
+    climbScreens:climbScreens,
+    // how far into the climb section (in screens) the camera stands at piece i
+    climbAt:function(i){return C_W0+(i+.5)*PER;},
+    climbs:!!climbEl
   };
 }
 window.Lighthouse={init:init};

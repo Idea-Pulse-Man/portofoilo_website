@@ -57,7 +57,7 @@
 </svg>
 
 <div class="hero3d">
-  <div id="gl" role="img" aria-label="A white lighthouse with red bands and a keeper's cottage on a grassy headland at golden hour. Dark layered cliffs drop to boulders and white surf, a tall sea stack stands offshore, and the sun sits low between them, laying a path of light across the water while gulls circle the lantern."></div>
+  <div id="gl" role="img" aria-label="A white lighthouse with red bands on a grassy headland at golden hour. Dark layered cliffs drop to boulders and white surf, a tall sea stack stands offshore, and the sun sits low between them, laying a path of light across the water while gulls circle the lantern."></div>
   <div class="fx" aria-hidden="true"><div class="rays" id="rays"><i></i></div><div class="flare" id="flare"></div></div>
   <div class="vignette"></div><div class="grain"></div><div class="scrim"></div>
   <div class="wrap hero-inner">
@@ -138,6 +138,36 @@
   </div>
   <canvas id="birds" aria-hidden="true"></canvas>
 </div>
+
+<!-- The climb (desktop): scrolling past the hero flies to the lighthouse door and up the stair inside, where the work
+     hangs on the wall, each piece with its plaque; it ends on the lantern gallery. Where it runs, it is the work: the
+     card index below is hidden (and kept for screen readers). app.js sets its height from the number of projects and
+     shows it only where the scene can run; everywhere else the card index is the work. -->
+<section class="climb" id="climb" aria-label="The work, hung inside the lighthouse">
+  <div class="climb-sticky">
+    <div class="wrap climb-intro">
+      <p class="kicker"><svg class="i" aria-hidden="true"><use href="#i-spark"/></svg>Selected work</p>
+      <h2>Climb the lighthouse</h2>
+      <p>Every project hangs on the wall of the stair, with a plaque beside it. Keep scrolling to climb.</p>
+      <a class="pill" href="#writing">Skip the climb</a>
+    </div>
+    <!-- the ending: out on the water, the lamp turns onto you and spells HELLO in Morse; the dots light as it flashes
+         them, the letters as they are spelled out (js/app.js) -->
+    <div class="wrap climb-end">
+      <p class="kicker"><svg class="i" aria-hidden="true"><use href="#i-spark"/></svg>The keeper's signal</p>
+      <p class="morse" aria-hidden="true"></p>
+      <h2 class="morse-word" aria-label="Hello">HELLO</h2>
+      <p class="climb-end-text">Every lighthouse flashes a pattern of its own, so ships at sea can tell which one they are looking at. This one spells hello.</p>
+      <div class="pills">
+        <a class="pill" data-email href="mailto:hello@your-domain.com"><svg class="i"><use href="#i-mail"/></svg>Say hello back</a>
+        <button class="pill" type="button" data-link="book"><svg class="i"><use href="#i-cal"/></svg>Book a call</button>
+      </div>
+    </div>
+    <div class="climb-hud glass"><span class="climb-n"></span><span class="climb-name"></span><span class="climb-links"></span><a class="climb-skip" href="#writing">Skip</a></div>
+    <div class="climb-bar" aria-hidden="true"><i></i></div>
+  </div>
+</section>
+<div class="climb-fade" aria-hidden="true"></div>
 
 <div class="wrap">
   <main id="work">

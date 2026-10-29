@@ -266,9 +266,30 @@ function apply(f){var n=0,all=0;
 FILTERS.forEach(function(f){var b=document.createElement("button");b.type="button";b.className="chip";b.dataset.filter=f[0];
   b.innerHTML=icon(f[0])+esc(f[1]);b.addEventListener("click",function(){apply(f[0]);});bar.appendChild(b);});
 bar.appendChild(note);apply("all");
+/* ================= The climb: the same work, framed and labelled for the walls of the lighthouse =================
+   One cover and one plaque per piece, painted on canvases that scene.js hangs beside the stair. The covers are the
+   cards' covers (same painter, same seed); the plaques are museum labels: dark slate, a gold rule, cream type. */
+var WORKS=[];SECTIONS.forEach(function(s){PROJECTS.forEach(function(p){if(p.section===s.id)WORKS.push({p:p,sec:s.title});});});
+function lines(c,s,maxW){var out=[],line="";s.split(/\s+/).forEach(function(w){var t=line?line+" "+w:w;if(c.measureText(t).width>maxW&&line){out.push(line);line=w;}else line=t;});if(line)out.push(line);return out;}
+function plaqueFor(w,i){var p=w.p,PW=640,PH=800,cv=document.createElement("canvas");cv.width=PW;cv.height=PH;var c=cv.getContext("2d"),y=168;
+  var g=c.createLinearGradient(0,0,0,PH);g.addColorStop(0,"#211d24");g.addColorStop(1,"#151318");c.fillStyle=g;c.fillRect(0,0,PW,PH);
+  c.strokeStyle="rgba(235,192,81,.55)";c.lineWidth=2;c.strokeRect(22,22,PW-44,PH-44);
+  text(c,(w.sec+"  ·  "+String(i+1).padStart(2,"0")+" / "+WORKS.length).toUpperCase(),52,92,600,21,"#ABA293");
+  c.font="62px Marcellus, Georgia, serif";c.fillStyle="#F6EEDF";lines(c,p.name,PW-104).slice(0,2).forEach(function(l){c.fillText(l,52,y);y+=68;});
+  if(p.meta){text(c,p.meta,52,y-10,500,27,"#C9BFAE");y+=26;}
+  c.fillStyle="rgba(235,192,81,.75)";c.fillRect(52,y,64,2);y+=62;
+  c.font=font(400,33);c.fillStyle="#E4DACB";lines(c,p.text,PW-104).slice(0,8).forEach(function(l){c.fillText(l,52,y);y+=48;});
+  text(c,p.tags.map(function(t){return LABEL[t];}).join("  ·  "),52,PH-112,500,23,"#9C9384");
+  var ln=(p.url&&/^https?:/.test(p.url)?p.url:p.repo||"").replace(/^https?:\/\/(www\.)?/,"");
+  if(ln)text(c,ln.length>40?ln.slice(0,39)+"…":ln,52,PH-70,500,23,"#EBC051");
+  return cv;}
+function coverFor(w,i){var cv=document.createElement("canvas");cv.width=768;cv.height=432;var c=cv.getContext("2d");c.scale(.8,.8);try{COVERS[w.p.id](c,rng(101+i*17));}catch(e){console.error(e);}return cv;}
+var worksSent=false;
+function sendWorks(){if(worksSent||!GL||!GL.climbs)return;worksSent=true;GL.setWorks(WORKS.map(function(w,i){return{cover:coverFor(w,i),plaque:plaqueFor(w,i)};}));}
+
 // covers wait for the webfont, so their labels are drawn in it
 var painted=false;
-function paintCovers(){if(painted)return;painted=true;paint.forEach(function(q,i){var c=q[0].getContext("2d");try{COVERS[q[1]](c,rng(101+i*17));}catch(e){console.error(e);}});}
+function paintCovers(){if(painted)return;painted=true;paint.forEach(function(q,i){var c=q[0].getContext("2d");try{COVERS[q[1]](c,rng(101+i*17));}catch(e){console.error(e);}});sendWorks();}
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(paintCovers);
 setTimeout(paintCovers,1500);
 
@@ -305,17 +326,45 @@ var TWIN=(function(){
    On desktop the headland is a fixed layer behind the whole page: #gl and its light leave the hero, and a veil
    (blurred, darker) deepens as you scroll. Touch screens keep the scene in the hero, where it scrolls away. */
 var FIXED=!!(mm&&mm("(hover:hover) and (pointer:fine) and (min-width:761px)").matches),host=document.getElementById("gl"),fxEl=hero.querySelector(".fx"),veil=null;
+var climbEl=document.getElementById("climb"),hudN=climbEl.querySelector(".climb-n"),hudName=climbEl.querySelector(".climb-name"),hudLinks=climbEl.querySelector(".climb-links");
 function heroReady(){hero.classList.add("ready");if(BIRDS)BIRDS.start();}
+// the caption follows the climb: its phase drives the intro and the caption, and each piece in view names itself
+function onClimb(st){climbEl.setAttribute("data-phase",st.phase);if(st.index<0)return;var p=WORKS[st.index].p;
+  hudN.textContent=String(st.index+1).padStart(2,"0")+" / "+WORKS.length;hudName.textContent=p.name;hudLinks.innerHTML=cardLinks(p);}
+/* the keeper's signal at the end: the lamp spells HELLO (the word and its code are in step with MORSE in scene.js).
+   Each dot or dash lights while the lamp shows it; each letter lights once it has been spelled, and stays lit */
+var MORSE_WORD="HELLO",MORSE_CODE={H:"....",E:".",L:".-..",O:"---"},morseEl=climbEl.querySelector(".morse"),wordEl=climbEl.querySelector(".morse-word");
+morseEl.innerHTML=Array.from(MORSE_WORD).map(function(ch){return'<span class="ch">'+Array.from(MORSE_CODE[ch]).map(function(s){return'<i class="'+(s==="."?"dot":"dash")+'"></i>';}).join("")+'</span>';}).join("");
+wordEl.innerHTML=Array.from(MORSE_WORD).map(function(ch){return'<span aria-hidden="true">'+ch+'</span>';}).join("");
+var morseChs=[].slice.call(morseEl.children),morseLts=[].slice.call(wordEl.children);
+if(reduce)morseLts.forEach(function(sp){sp.classList.add("lit");});
+function onMorse(st){
+  morseChs.forEach(function(ch,i){[].forEach.call(ch.children,function(sy,j){sy.classList.toggle("on",!!st.on&&i===st.li&&j===st.si);});});
+  morseLts.forEach(function(sp,i){if(st.li>i)sp.classList.add("lit");sp.classList.toggle("now",i===st.li);});}
 if(window.THREE&&window.Lighthouse){
   if(FIXED){veil=document.createElement("div");veil.className="veil";veil.setAttribute("aria-hidden","true");
     document.querySelector(".bg").after(host,fxEl,veil);host.classList.add("fixed");fxEl.classList.add("fixed");root.classList.add("scene-fixed");}
   try{GL=Lighthouse.init({host:host,hero:hero,flare:document.getElementById("flare"),rays:document.getElementById("rays"),night:isDark(),reduce:reduce,fixed:FIXED,twin:TWIN,
-    onReady:heroReady,onHot:function(on){root.classList.toggle("scene-hot",on);},onToggle:toggleHour});}catch(e){console.error(e);GL=null;}
+    onReady:heroReady,onHot:function(on){root.classList.toggle("scene-hot",on);},onToggle:toggleHour,
+    climb:climbEl,fade:document.querySelector(".climb-fade"),bar:climbEl.querySelector(".climb-bar i"),onClimb:onClimb,onMorse:onMorse});}catch(e){console.error(e);GL=null;}
 }
 if(!GL){if(TWIN)TWIN.end();heroReady();}
-/* the veil follows the scroll: clear over the hero, full by the time the work is in view */
+// the climb runs where the scene is a fixed layer; its length is a stretch of scroll per piece. There it is the work:
+// the card grid stays only for screen readers (out of the tab order), and every link to the work leads up the stair
+if(GL&&GL.climbs){root.classList.add("can-climb");climbEl.style.height=Math.round((GL.climbScreens(WORKS.length)+1)*100)+"vh";
+  [].forEach.call(document.querySelectorAll("#shelves a"),function(a){a.tabIndex=-1;});
+  document.querySelector(".skip").setAttribute("href","#climb");
+  // the footer's Products, Client work and Experiments go to that shelf's first piece on the wall
+  [].forEach.call(document.querySelectorAll('.sitemap a[href^="#"]'),function(a){var id=a.getAttribute("href").slice(1),i=-1;
+    WORKS.some(function(w,j){if(w.p.section===id){i=j;return true;}return false;});if(i<0)return;
+    a.addEventListener("click",function(e){e.preventDefault();var top=climbEl.getBoundingClientRect().top+scrollY;
+      scrollTo({top:Math.round(top+GL.climbAt(i)*innerHeight),behavior:reduce?"auto":"smooth"});});});}
+/* the veil follows the scroll: clear over the hero (and the whole climb), full by the time the index is in view */
 if(veil)(function(){var queued=false;
-  function sink(){queued=false;var v=clamp((scrollY-hero.offsetHeight*.25)/(innerHeight*.8),0,1);veil.style.opacity=(v*v*(3-2*v)).toFixed(3);}
+  function sink(){queued=false;var v;
+    if(GL&&GL.climbs)v=clamp((innerHeight-climbEl.getBoundingClientRect().bottom)/(innerHeight*.7),0,1);
+    else v=clamp((scrollY-hero.offsetHeight*.25)/(innerHeight*.8),0,1);
+    veil.style.opacity=(v*v*(3-2*v)).toFixed(3);}
   addEventListener("scroll",function(){if(!queued){queued=true;requestAnimationFrame(sink);}},{passive:true});addEventListener("resize",sink);sink();})();
 
 /* ================= Three birds who like the name =================
