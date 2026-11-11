@@ -17,12 +17,12 @@ The scene is built in code. Here is what makes it read as real:
 
 ## Quick start
 
-Serve the **repository root** (so the `../index.html` link to the Jack site works) and open `/portfolio/`:
+Serve the repository root:
 
 ```bash
-npx serve .          # then open http://localhost:3000/portfolio/
+npx serve .          # then open http://localhost:3000/
 # or
-python -m http.server  # then open http://localhost:8000/portfolio/
+python -m http.server  # then open http://localhost:8000/
 ```
 
 You need an internet connection for three.js and Google Fonts. Opening `index.html` straight from disk works too, but browsers won't let WebGL read local image files. In that case the scene skips the photo scans and falls back to flat colour, so use a local server to see it as intended.
@@ -84,7 +84,8 @@ A pill whose `LINKS` value is empty still shows, but does nothing. Its tooltip s
 ## Files
 
 ```text
-portfolio/
+.
+├── vercel.json       # static deploy: no framework, no build step
 ├── index.html        # the page: hero, résumé, writing, footer, SVG icon sprite
 ├── styles.css        # tokens, hero, résumé, shelves, intro, breakpoints
 ├── favicon.svg
