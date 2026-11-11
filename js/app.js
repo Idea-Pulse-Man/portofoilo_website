@@ -41,7 +41,7 @@ var PROJECTS=[
  {section:"lab",id:"headland",name:"Headland",text:"This site. A lighthouse on a headland in three.js: cliffs pulled up from a height field and dressed in photo-scanned rock, and a shader sea with surf on every stone.",tags:["3d","web","motion"],repo:REPO},
  {section:"lab",id:"ideapulse",name:"Idea Pulse",text:"The studio's site: Next.js and React Three Fiber, an intro, a pinned work gallery and a page for every case study.",tags:["web","3d","motion"],repo:REPO},
  {section:"lab",id:"animline",name:"animation-line",text:"White pentagons drifting over a blue gradient, joined by thin lines when they meet. Click to add more.",tags:["motion","web","oss"],repo:REPO},
- {section:"lab",id:"jack",name:"Jack",text:"A one-page portfolio template in plain HTML, CSS and JavaScript, with a dark and a light theme.",tags:["web","oss"],url:"../index.html",repo:REPO}
+ {section:"lab",id:"jack",name:"Jack",text:"A one-page portfolio template in plain HTML, CSS and JavaScript, with a dark and a light theme.",tags:["web","oss"],repo:REPO}
 ];
 /* ---- Filters: one chip per tag, each with its icon (the t-* symbols in index.html). "all" shows everything. ---- */
 var FILTERS=[["all","All"],["web","Web"],["3d","3D"],["product","Product"],["brand","Brand"],["commerce","E-commerce"],["data","Data"],["motion","Motion"],["oss","Open source"]];
